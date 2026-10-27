@@ -1,0 +1,70 @@
+.workbench-select {
+  display: inline-grid;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.workbench-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-height-md);
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--panel-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
+}
+
+.workbench-select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workbench-select-trigger > svg { flex-shrink: 0; color: var(--muted); }
+.workbench-select-trigger[data-hovered] { border-color: var(--line-strong); background: var(--panel-soft); }
+.workbench-select-trigger[data-focus-visible] { outline: 2px solid var(--accent); outline-offset: 2px; }
+.workbench-select-trigger[data-disabled] { opacity: 0.5; cursor: default; }
+
+.workbench-select-popover {
+  /* React Aria 使用视口坐标定位；抵消文档缩放，保持浮层与触发器对齐。 */
+  zoom: calc(1 / var(--app-ui-scale));
+  z-index: 1000;
+  min-width: var(--trigger-width);
+  max-width: min(420px, calc(100vw - 24px));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel-raised);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+  overflow: auto;
+  outline: none;
+}
+
+/* 外层抵消缩放仅用于定位，内容恢复页面缩放，避免文字和行高被放大。 */
+.workbench-select-popover > :is([role="listbox"], [role="dialog"]) { zoom: var(--app-ui-scale); }
+.workbench-select-options { max-height: 300px; overflow: auto; padding: 5px; outline: none; }
+.workbench-select-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font-size: inherit;
+  outline: none;
+  cursor: pointer;
+}
+.workbench-select-option > span { min-width: 0; overflow-wrap: anywhere; }
+.workbench-select-option > svg { flex-shrink: 0; }
+.workbench-select-option[data-focused], .workbench-select-option[data-selected] { background: var(--accent-tint); color: var(--text-strong); }
+.workbench-select-option[data-selected] { font-weight: var(--font-weight-label); }
+.workbench-select-option[data-disabled] { opacity: 0.5; cursor: default; }
+.workbench-select-popover[data-entering] { animation: workbench-select-enter var(--motion-fast) var(--ease-out); }
+@keyframes workbench-select-enter { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .workbench-select-popover[data-entering] { animation: none; } }

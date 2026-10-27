@@ -1,0 +1,160 @@
+/* Shared motion, focus, and reduced-motion behavior. Component colors and
+   surfaces live in their own primitive or page files. */
+@media (min-width: 781px) {
+  .btn:focus-visible,
+  .nav-link:focus-visible,
+  .brand:focus-visible,
+  .list-button:focus-visible,
+  .copy-source-card:focus-visible,
+  .copy-project-row:focus-visible,
+  .check-card:focus-within,
+  .segmented button:focus-visible,
+  .source-tabs button:focus-visible,
+  .style-reference-summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    box-shadow: var(--focus-ring-shadow);
+  }
+
+  .field:focus-within label {
+    color: var(--accent-strong);
+  }
+
+  .video-row-button:hover .video-title-line strong,
+  .list-button:hover .list-title {
+    color: var(--text-strong);
+  }
+
+  .metric-bar span,
+  .list-progress span,
+  .progress-fill,
+  .progress-button-fill,
+  .gross-monitor-metric-bar > span {
+    transition: transform var(--motion-flow) var(--ease-apple);
+  }
+
+  .copy-job-row .status-pill.pending::after,
+  .status-pill.transcribing::after,
+  .status-pill.pending[data-busy="true"]::after,
+  .progress-fill::after,
+  .progress-button-fill::after,
+  .project-progress::after {
+    animation: none;
+  }
+
+  .modal-backdrop {
+    animation: modal-fade-in var(--motion-base) var(--ease-apple) both;
+  }
+
+  .modal-panel {
+    animation: modal-rise var(--motion-slow) var(--ease-apple) both;
+  }
+
+  .markdown-box,
+  .code-box,
+  .result-box,
+  .writer-textarea,
+  .modal-editor textarea {
+    line-height: var(--line-height-reading);
+  }
+
+  .draft-document {
+    padding: 18px 20px;
+  }
+}
+
+.btn,
+.nav-link,
+.brand,
+.list-button,
+.copy-source-card,
+.copy-project-row,
+.task-center-row,
+.tools-candidate-card,
+.gross-monitor-card,
+.engagement-option,
+.workbench-toast {
+  transform-origin: center;
+}
+
+.btn:active,
+.list-button:active,
+.copy-source-card:active,
+.copy-project-row:active,
+.tools-candidate-card:active {
+  transform: none;
+  transition-duration: var(--motion-fast);
+  transition-timing-function: var(--ease-press);
+}
+
+@keyframes workbench-sheen {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes workbench-flow-pulse {
+  from {
+    opacity: 0.72;
+    transform: translateY(3px) scale(0.992);
+  }
+}
+
+@keyframes task-toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+}
+
+@keyframes task-toast-exit {
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes toast-progress {
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes modal-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
+}
+
+@keyframes page-content-enter {
+  from {
+    opacity: 0;
+
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

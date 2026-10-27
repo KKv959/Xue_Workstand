@@ -1,0 +1,36 @@
+description: "账号风格库写作链路回归评测（本地，仅使用脱敏样本）"
+
+providers:
+  - id: file://./promptfoo-provider.mjs
+    label: "本地工作台写作链路"
+
+prompts:
+  - file://./prompts/writer.txt
+
+tests:
+  - description: "主题写作：产品发布"
+    vars:
+      task: "写一篇 450 到 650 字的短视频口播稿，开头先制造一个具体反差，结尾给出明确行动建议。"
+      source: "某款桌面显示器新增护眼模式、USB-C 一线连接和可调节支架。护眼模式降低频闪，USB-C 可以同时传输画面和给笔记本供电，支架支持升降和旋转。"
+    assert:
+      - type: javascript
+        value: |
+          const text = String(output || "");
+          return text.length >= 300 && text.length <= 900;
+      - type: not-contains
+        value: "http://"
+      - type: not-contains
+        value: "https://"
+  - description: "改写：只保留事实，不虚构参数"
+    vars:
+      task: "把素材改成自然、适合口播的短视频文案，不要添加素材中没有的参数或价格。"
+      source: "这款耳机支持主动降噪、通透模式和双设备连接。续航时间需要以实际测试为准，素材没有提供价格。"
+    assert:
+      - type: javascript
+        value: |
+          const text = String(output || "");
+          return text.length >= 160 && text.length <= 700;
+      - type: not-contains
+        value: "元"
+      - type: not-contains
+        value: "小时续航"

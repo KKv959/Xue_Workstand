@@ -1,0 +1,13 @@
+.triggerRow, .header, .footer, .option { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.triggerRow { color: var(--muted); font-size: var(--text-meta); padding: 0 8px; }
+.panel { width: min(440px, calc(100vw - 32px)); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 20px; padding: 24px; background: var(--panel); }
+.header { align-items: flex-start; }
+.header h2 { margin: 0 0 8px; font-size: 18px; }
+.header p { margin: 0; font-size: 13px; }
+.groups { display: grid; gap: 16px; min-height: 0; max-height: 55vh; overflow-y: auto; }
+.group { min-width: 0; border: 0; margin: 0; padding: 0; }
+.group legend { color: var(--muted); font-size: 12px; padding: 0 0 6px; }
+.option { min-height: 40px; padding: 6px 8px; font-size: 14px; border-radius: var(--radius-sm); cursor: pointer; }
+.option:hover { background: var(--panel-soft); }
+.option input { width: 16px; height: 16px; accent-color: var(--accent); }
+.footer { padding-top: 16px; border-top: 1px solid var(--line-subtle); }

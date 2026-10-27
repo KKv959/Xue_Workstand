@@ -1,0 +1,114 @@
+/* 热点雷达 · 墨白编辑部：胶囊视图切换、设置收成一张卡、报告与资讯放进纸面画框。 */
+
+.radar-page .radar-view-toolbar {
+  border-bottom: 0;
+}
+
+.radar-page .radar-content-tabs,
+.radar-page .radar-compact-nav .radar-content-tabs {
+  display: inline-flex;
+  width: fit-content;
+  gap: 2px;
+  padding: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--panel-muted);
+}
+
+.radar-page .radar-content-tabs button,
+.radar-page .radar-compact-nav .radar-content-tabs button {
+  height: 30px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background var(--motion-base) var(--ease-out), color var(--motion-base), box-shadow var(--motion-base);
+}
+
+.radar-page .radar-content-tabs button[aria-pressed="true"] {
+  border: 0;
+  color: var(--text-strong);
+  background: var(--panel);
+  font-weight: 650;
+  box-shadow: 0 1px 2px rgb(11 12 14 / 10%);
+}
+
+.radar-page .trendradar-report {
+  gap: 18px;
+}
+
+/* 采集设置：一张可展开的卡片 */
+.radar-page .trendradar-generation {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+}
+
+.radar-page .trendradar-generation summary {
+  padding: 14px 18px;
+  font-weight: 650;
+  list-style-position: inside;
+}
+
+.radar-page .trendradar-generation[open] summary {
+  border-bottom: 1px solid var(--line-subtle);
+}
+
+.radar-page .trendradar-generation-body {
+  padding: 16px 18px 20px;
+  animation: ink-rise var(--motion-slow) var(--ease-out) both;
+}
+
+.radar-page .trendradar-reading-toolbar {
+  align-items: center;
+  border-bottom: 0;
+}
+
+/* 报告与资讯的画框 */
+.radar-page .trendradar-native-viewport {
+  height: max(520px, calc(var(--app-vh) * 100 - var(--topbar-height) - 220px));
+}
+
+/* 资讯发现沿用原来的弹性撑满，只换画框样式。 */
+.radar-page .trendradar-native-viewport,
+.radar-page .newsnow-viewport {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--panel);
+  animation: ink-rise var(--motion-flow) var(--ease-out) both;
+}
+
+.radar-page .newsnow-toolbar {
+  align-items: center;
+}
+
+.radar-page .newsnow-placeholder {
+  border: 1px dashed var(--line-strong);
+  border-radius: 20px;
+  background: transparent;
+}
+
+@media (max-width: 900px) {
+  .radar-page .trendradar-native-viewport {
+    height: calc(var(--app-dvh) * 100 - 220px);
+  }
+
+  .radar-page .trendradar-native-viewport,
+  .radar-page .newsnow-viewport {
+    margin: 0 calc(var(--page-pad) * -1);
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radar-page .trendradar-generation-body,
+  .radar-page .trendradar-native-viewport,
+  .radar-page .newsnow-viewport {
+    animation: none;
+  }
+}

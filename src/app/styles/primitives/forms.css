@@ -1,0 +1,207 @@
+.field {
+  display: grid;
+  gap: var(--field-label-gap);
+  min-width: 0;
+}
+
+.field label {
+  color: var(--muted-strong);
+  font-size: var(--text-meta);
+  font-weight: var(--font-weight-label);
+  line-height: var(--line-height-caption);
+}
+
+.field > span {
+  color: var(--muted-strong);
+  font-size: var(--text-meta);
+  font-weight: var(--font-weight-label);
+  line-height: var(--line-height-caption);
+}
+
+.field input,
+.field :is(select, .workbench-select-trigger),
+.field textarea,
+.writer-ref-select,
+.writer-textarea,
+.copy-links-textarea,
+.account-filter-input,
+.filter-select,
+.filter-search input,
+.modal-editor textarea,
+.pane-search input {
+  width: 100%;
+  min-height: var(--field-height);
+  padding: 9px var(--control-padding-x);
+  border: 1px solid color-mix(in oklch, var(--line-strong) 46%, var(--line));
+  border-radius: var(--control-radius);
+  color: var(--text);
+  background: var(--control-bg);
+  box-shadow: var(--surface-inset-highlight);
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition:
+    background-color var(--motion-base) var(--ease-apple),
+    border-color var(--motion-base) var(--ease-apple),
+    box-shadow var(--motion-base) var(--ease-apple);
+}
+
+.field textarea,
+.writer-textarea,
+.copy-links-textarea,
+.modal-editor textarea {
+  resize: vertical;
+}
+
+.field input:hover,
+.field :is(select, .workbench-select-trigger):hover,
+.field textarea:hover,
+.writer-ref-select:hover,
+.writer-textarea:hover,
+.copy-links-textarea:hover,
+.account-filter-input:hover,
+.filter-select:hover,
+.filter-search input:hover,
+.modal-editor textarea:hover,
+.pane-search input:hover {
+  border-color: color-mix(in oklch, var(--accent) 24%, var(--line-strong));
+  background: var(--panel-raised);
+  box-shadow: var(--control-field-hover-shadow);
+}
+
+.field input:focus,
+.field :is(select, .workbench-select-trigger):focus,
+.field textarea:focus,
+.writer-ref-select:focus,
+.writer-textarea:focus,
+.copy-links-textarea:focus,
+.account-filter-input:focus,
+.filter-select:focus,
+.filter-search input:focus,
+.modal-editor textarea:focus,
+.pane-search input:focus {
+  border-color: color-mix(in oklch, var(--accent) 54%, var(--line-strong));
+  background: var(--panel-raised);
+  box-shadow: var(--focus-ring-shadow);
+}
+
+.field input:focus-visible,
+.field :is(select, .workbench-select-trigger):focus-visible,
+.field textarea:focus-visible,
+.writer-ref-select:focus-visible,
+.writer-textarea:focus-visible,
+.copy-links-textarea:focus-visible,
+.account-filter-input:focus-visible,
+.filter-select:focus-visible,
+.filter-search input:focus-visible,
+.modal-editor textarea:focus-visible,
+.pane-search input:focus-visible {
+  outline-color: var(--accent);
+}
+
+.field select,
+select.writer-ref-select,
+select.filter-select,
+.inline-sort-control select {
+  --select-arrow: url("data:image/svg+xml,%3Csvg width='16' height='16' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='m6 9 6 6 6-6' stroke='%23607083' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --select-background: linear-gradient(180deg, var(--panel-raised) 0%, color-mix(in oklch, var(--panel) 92%, var(--panel-soft)) 100%);
+
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 36px;
+  background: var(--select-arrow), var(--select-background);
+  background-repeat: no-repeat, no-repeat;
+  background-position:
+    right 11px center,
+    0 0;
+  background-size:
+    16px 16px,
+    100% 100%;
+}
+
+.field select:hover,
+select.writer-ref-select:hover,
+select.filter-select:hover,
+.inline-sort-control select:hover {
+  --select-background: linear-gradient(180deg, var(--panel-raised) 0%, var(--panel-raised) 100%);
+}
+
+.field select:focus,
+select.writer-ref-select:focus,
+select.filter-select:focus,
+.inline-sort-control select:focus {
+  --select-background: linear-gradient(180deg, var(--panel-raised) 0%, var(--panel-raised) 100%);
+}
+
+.segmented,
+.source-tabs {
+  overflow: hidden;
+  padding: 3px;
+  border: 1px solid color-mix(in oklch, var(--line-strong) 24%, var(--line));
+  border-radius: var(--button-radius);
+  background: color-mix(in oklch, var(--panel-muted) 58%, var(--panel-soft));
+  box-shadow: inset 0 1px 2px color-mix(in oklch, var(--text-strong) 5%, transparent);
+}
+
+.segmented {
+  display: inline-flex;
+}
+
+.source-tabs {
+  display: flex;
+  width: 100%;
+  min-height: var(--control-height-md);
+}
+
+.segmented button,
+.source-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--control-height-md);
+  padding: 0 var(--control-padding-x);
+  border: 0;
+  border-radius: var(--button-radius);
+  color: var(--muted-strong);
+  background: transparent;
+  font-size: var(--text-meta);
+  font-weight: var(--font-weight-label);
+  line-height: var(--line-height-meta);
+  transition:
+    background-color var(--motion-base) var(--ease-apple),
+    color var(--motion-base) var(--ease-apple),
+    box-shadow var(--motion-base) var(--ease-apple);
+}
+
+.source-tabs button {
+  flex: 1 1 0;
+  min-height: var(--control-height-sm);
+}
+
+.segmented button:last-child,
+.source-tabs button:last-child {
+  border-right: 0;
+}
+
+.segmented button.active,
+.source-tabs button.active {
+  color: var(--control-active-text);
+  background: var(--panel-raised);
+  box-shadow: 0 1px 2px color-mix(in oklch, var(--text-strong) 12%, transparent),
+    0 3px 8px color-mix(in oklch, var(--text-strong) 7%, transparent);
+}
+
+.segmented button:hover:not(:disabled),
+.source-tabs button:hover:not(:disabled) {
+  color: var(--text-strong);
+  background: color-mix(in oklch, var(--accent-tint) 34%, transparent);
+}
+
+.segmented button:disabled,
+.source-tabs button:disabled {
+  opacity: 0.45;
+}
+
+.source-tabs svg {
+  flex: 0 0 auto;
+}

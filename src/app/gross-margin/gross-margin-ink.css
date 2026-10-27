@@ -1,0 +1,145 @@
+/* 毛利维护 / 监控 · 墨白编辑部：毛利率等关键数字上移到页头实时滚动，结果面板去掉彩色底。 */
+
+@media (min-width: 1181px) {
+  .gross-margin-page.gross-margin-workbench-page {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .gross-margin-page.gross-margin-workbench-page:has(> .notice),
+  .gross-margin-page.gross-margin-workbench-page:has(> .error) {
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  .gross-margin-page.gross-monitor-page {
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+}
+
+/* 维护：三栏改为三张并排卡片 */
+.gross-margin-page .gross-margin-workspace.panel {
+  gap: 14px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+@media (min-width: 1181px) {
+  .gross-margin-page .gross-margin-workspace.panel {
+    grid-template-columns: minmax(200px, 232px) minmax(560px, 1fr) minmax(248px, 280px);
+  }
+}
+
+/* 维护表格过宽时在中栏内部横向滚动，不把右侧结果挤出视口。 */
+.gross-margin-page .gross-margin-workspace > .pane:nth-child(2) .pane-body {
+  overflow-x: auto;
+}
+
+/* 毛利率、毛利额、维护成本已在页头实时显示，结果栏只保留明细与导出。 */
+.gross-margin-page .gross-result-pane .gross-result-panel {
+  display: none;
+}
+
+.gross-margin-page .gross-margin-workspace > .pane {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--panel);
+}
+
+.gross-margin-page .pane-header {
+  border-bottom-color: var(--line-subtle);
+  background: transparent;
+}
+
+.gross-margin-page .pane-header h2 {
+  font-size: 16px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.gross-margin-page .gross-result-panel,
+.gross-margin-page .gross-result-panel.maintenance,
+.gross-margin-page .gross-result-panel.positive,
+.gross-margin-page .gross-result-panel.warning,
+.gross-margin-page .gross-result-panel.negative {
+  border: 0;
+  border-radius: 14px;
+  background: var(--panel-soft);
+}
+
+.gross-margin-page .gross-result-panel.maintenance strong {
+  color: var(--text-strong);
+}
+
+.gross-margin-page .gross-result-panel strong {
+  font-family: var(--font-numeric);
+  letter-spacing: -0.03em;
+}
+
+.gross-margin-page .gross-result-panel.positive strong {
+  color: #1f7a55;
+}
+
+/* 监控：筛选条吸顶，卡片是纸面 */
+.gross-monitor-page .gross-monitor-topbar {
+  position: sticky;
+  top: var(--topbar-height);
+  z-index: 12;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: none;
+}
+
+.gross-monitor-page .gross-monitor-card {
+  border-radius: 20px;
+  box-shadow: none;
+  transition: border-color var(--motion-base) var(--ease-out), box-shadow var(--motion-slow) var(--ease-out), transform var(--motion-island) var(--ease-spring);
+  animation: ink-rise 420ms var(--ease-out) both;
+}
+
+.gross-monitor-page .gross-monitor-card:hover {
+  border-color: var(--line-strong);
+  box-shadow: 0 16px 36px rgb(11 12 14 / 9%);
+  transform: translateY(-3px);
+}
+
+.gross-monitor-page .gross-monitor-empty {
+  border: 1px dashed var(--line-strong);
+  border-radius: 20px;
+  background: transparent;
+}
+
+@media (max-width: 900px) {
+  .gross-monitor-page .gross-monitor-topbar {
+    position: static;
+  }
+
+  /* 手机：三栏改为上下堆叠，本次维护在最前，结果其次，单价表放最后。 */
+  .gross-margin-page .gross-margin-workspace.panel {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible;
+  }
+
+  .gross-margin-page .gross-margin-workspace > .pane:nth-child(1) {
+    order: 3;
+  }
+
+  .gross-margin-page .gross-margin-workspace > .pane:nth-child(2) {
+    order: 1;
+  }
+
+  .gross-margin-page .gross-margin-workspace > .pane:nth-child(3) {
+    order: 2;
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gross-monitor-page .gross-monitor-card {
+    animation: none;
+  }
+
+  .gross-monitor-page .gross-monitor-card:hover {
+    transform: none;
+  }
+}

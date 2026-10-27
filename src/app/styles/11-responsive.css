@@ -1,0 +1,130 @@
+/* Shell and global responsive layout */
+@media (min-width: 1181px) {
+  html,
+  body {
+    min-height: 100%;
+  }
+
+  .app-shell {
+    min-height: calc(var(--app-vh) * 100);
+  }
+
+  .main-content {
+    min-height: 0;
+  }
+
+  .page {
+    align-content: start;
+    min-height: 0;
+  }
+
+  .page-header {
+    min-height: 72px;
+    padding: 10px 16px;
+  }
+
+  .page-header .subtle {
+    margin-top: 2px;
+  }
+
+  .panel-inner {
+    gap: 10px;
+    padding: 12px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .app-shell {
+    grid-template-columns: var(--sidebar-width-compact) minmax(0, 1fr);
+  }
+
+  .route-progress {
+    left: var(--sidebar-width-compact);
+  }
+}
+
+@media (max-width: 900px) {
+  :root {
+    --page-pad: 14px;
+  }
+
+  .toast-stack {
+    right: 14px;
+    bottom: max(14px, env(safe-area-inset-bottom));
+    left: 14px;
+    width: auto;
+  }
+
+  .app-shell,
+  .grid-2,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .main-content {
+    padding-bottom: calc(74px + env(safe-area-inset-bottom));
+  }
+
+  .task-center-trigger {
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .task-center-drawer {
+    top: calc(8px + env(safe-area-inset-top));
+    right: 8px;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    left: 8px;
+    width: auto;
+    max-width: none;
+    max-height: none;
+    border-radius: 20px;
+  }
+
+  .task-center-trigger-copy small {
+    white-space: normal;
+  }
+
+  .task-center-drawer {
+    width: 100vw;
+    height: calc(var(--app-dvh) * 100);
+    max-width: none;
+    max-height: none;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .task-center-drawer-header {
+    padding-top: max(14px, env(safe-area-inset-top));
+  }
+
+  .page-header,
+  .section-title-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .page-header {
+    padding: 12px;
+  }
+
+  .page-title-row {
+    align-items: flex-start;
+  }
+
+  .page-title-mark {
+    width: 36px;
+    height: 36px;
+  }
+
+  .page-header-meta {
+    justify-content: flex-start;
+  }
+}

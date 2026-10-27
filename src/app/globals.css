@@ -1,0 +1,20 @@
+/*
+  Global CSS owns tokens, primitives, the application shell, and cross-route responsive/overlay styles.
+  Business route layouts import their colocated CSS after this shared foundation.
+*/
+@import "./styles/00-tokens.css";
+@import "./styles/01-base.css";
+@import "./styles/03-primitives.css";
+@import "./styles/primitives/buttons.css";
+@import "./styles/primitives/forms.css";
+@import "./styles/primitives/feedback.css";
+@import "./styles/primitives/workspaces.css";
+@import "./styles/primitives/interactions.css";
+@import "./styles/16-workbench-system.css";
+@import "./styles/02-shell.css";
+@import "./styles/10-documents-modals.css";
+@import "./styles/19-mobile-remote.css";
+@import "./styles/11-responsive.css";
+@import "./styles/30-ink-shell.css";
+@import "./styles/20-skin-shinigami.css";
+@import "../components/workbench-select.css";

@@ -1,0 +1,34 @@
+.DS_Store
+.metadata_never_index
+node_modules
+.next
+out
+dist
+coverage
+output
+tsconfig.tsbuildinfo
+# 环境配置及其备份仅保留本地；仓库只收录无密钥的示例
+.env*
+!.env.example
+style-library
+.vendor
+*.log
+.dev-server
+.dev-sandbox
+.remote-server
+.playwright-cli
+.promptfoo
+
+# 本地实验、验收和文档预览产物
+/outputs/
+/.code/
+/.claude/
+/.codex-artifacts/
+/.codex-docx-qc/
+/.impeccable/critique/
+/.tmp/
+/tmp/
+
+# 业务交付、转写稿和个人风格资料仅保留本地
+/deliverables/
+/OiiOii三张风格卡/

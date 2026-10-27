@@ -1,0 +1,153 @@
+/* 评论生成 · 墨白编辑部：左输入、中结果、右历史三栏并排，结果是主角。 */
+
+.assets-page .engagement-workbench {
+  gap: 14px;
+}
+
+.assets-page .engagement-main,
+.assets-page .engagement-history-pane {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--panel);
+  box-shadow: none;
+}
+
+.assets-page .pane-header {
+  border-bottom-color: var(--line-subtle);
+  background: transparent;
+}
+
+.assets-page .pane-header h2,
+.assets-page .section-title-row h2,
+.assets-page .section-title-row h3 {
+  font-size: 16px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+/* 输入栏：浅底，与结果区拉开层次 */
+.assets-page .engagement-generator-pane {
+  border-right: 1px solid var(--line-subtle);
+  background: var(--panel-soft);
+}
+
+.assets-page .engagement-generator-pane textarea {
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.assets-page .engagement-option {
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.assets-page .engagement-mode-segmented {
+  border: 0;
+  border-radius: 999px;
+  background: var(--panel-muted);
+}
+
+.assets-page .engagement-submit {
+  border-color: var(--text-strong);
+  color: #ffffff;
+  background: var(--text-strong);
+}
+
+/* 结果：评论像一列可复制的引文卡 */
+.assets-page .asset-text-list {
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+}
+
+.assets-page .asset-text-list.empty {
+  border: 1px dashed var(--line-strong);
+  background: transparent;
+}
+
+.assets-page .asset-text-list > p {
+  border-radius: 12px;
+  transition: background var(--motion-base) var(--ease-out);
+  animation: ink-rise 380ms var(--ease-out) both;
+  animation-delay: calc(var(--ink-item, 0) * 30ms);
+}
+
+.assets-page .asset-text-list > p {
+  padding: 10px 12px;
+  border: 0;
+  color: #1e2026;
+  background: var(--panel-soft);
+  font-size: 13px;
+  box-shadow: none;
+}
+
+.assets-page .asset-text-list > p:hover {
+  background: var(--panel-muted);
+}
+
+/* 来源只用中性标记；“相关原评”是真实样本，用朱砂点出。 */
+.assets-page .asset-text-list > p.origin-ai_generated,
+.assets-page .asset-text-list > p.origin-reused_hot_comment {
+  border: 0;
+  box-shadow: none;
+}
+
+.assets-page .asset-item-origin {
+  border: 0;
+  color: var(--muted-strong);
+  background: var(--panel);
+}
+
+.assets-page .asset-item-origin.origin-reused_hot_comment {
+  color: var(--signal-ink);
+  background: var(--signal-soft);
+}
+
+/* 历史：紧凑列表，选中黑色竖条 */
+.assets-page .engagement-history-pane .list-button {
+  border: 0;
+  border-radius: 12px;
+}
+
+.assets-page .engagement-history-pane .list-button:hover {
+  background: var(--panel-soft);
+  transform: none;
+}
+
+.assets-page .engagement-history-pane .list-button.active {
+  border: 0;
+  background: var(--panel-soft);
+  box-shadow: inset 3px 0 0 var(--text-strong);
+}
+
+.assets-page .engagement-history-pane .list-title {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+/* 1181–1380 也保持三栏，历史收窄为右侧一列而不是掉到页面底部。 */
+@media (min-width: 1181px) and (max-width: 1380px) {
+  .assets-page .engagement-workbench {
+    grid-template-columns: minmax(0, 1fr) 272px;
+  }
+
+  .assets-page .engagement-content-grid {
+    grid-template-columns: minmax(300px, 0.9fr) minmax(340px, 1.1fr);
+  }
+
+  .assets-page .engagement-history-pane {
+    max-height: none;
+  }
+}
+
+@media (max-width: 780px) {
+  .assets-page .engagement-generator-pane {
+    border-right: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assets-page .asset-text-list > p {
+    animation: none;
+  }
+}

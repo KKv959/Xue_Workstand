@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="brand-gradient" x1="8" y1="4" x2="58" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8dc8ff"/>
+      <stop offset=".27" stop-color="#8d9cff"/>
+      <stop offset=".5" stop-color="#c78df2"/>
+      <stop offset=".7" stop-color="#f3a2b4"/>
+      <stop offset=".84" stop-color="#f7cf8e"/>
+      <stop offset="1" stop-color="#73d7cf"/>
+    </linearGradient>
+    <radialGradient id="brand-shine" cx="0" cy="0" r="1" gradientTransform="translate(15 8) rotate(47) scale(39)">
+      <stop stop-color="#fff" stop-opacity=".72"/>
+      <stop offset=".48" stop-color="#fff" stop-opacity=".12"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#brand-gradient)"/>
+  <rect width="64" height="64" rx="14" fill="url(#brand-shine)"/>
+  <rect x="3.5" y="3.5" width="57" height="57" rx="11.5" fill="none" stroke="#fff" stroke-opacity=".32"/>
+  <path d="M29 12c1.2 8.4 5.8 13 14.2 14.2C34.8 27.4 30.2 32 29 40.4 27.8 32 23.2 27.4 14.8 26.2 23.2 25 27.8 20.4 29 12Z" fill="#fff"/>
+  <path d="M45.5 34c.9 6.2 4.3 9.6 10.5 10.5-6.2.9-9.6 4.3-10.5 10.5-.9-6.2-4.3-9.6-10.5-10.5 6.2-.9 9.6-4.3 10.5-10.5Z" fill="#fff" fill-opacity=".96"/>
+  <circle cx="15" cy="45" r="3.5" fill="#fff" fill-opacity=".92"/>
+</svg>

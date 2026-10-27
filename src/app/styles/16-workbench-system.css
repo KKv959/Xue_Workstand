@@ -1,0 +1,236 @@
+/*
+  System-wide workbench skin.
+  Tokens live in 00-tokens.css. This layer owns the shared workbench frame;
+  page CSS should only add route-specific density and business components.
+*/
+
+.page,
+.workbench-frame-page {
+  width: min(100%, var(--workbench-page-max-width));
+  align-content: start;
+  gap: var(--workbench-page-gap);
+  animation: page-content-enter var(--motion-slow) var(--ease-apple) both;
+}
+
+.page-header {
+  --button-radius: 999px;
+  align-items: center;
+  min-height: 72px;
+  padding: 10px 16px;
+  border: 1px solid color-mix(in oklch, var(--line) 72%, transparent);
+  border-radius: var(--radius-xl);
+  background: var(--glass-panel);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+}
+
+.page-title-group {
+  gap: 3px;
+}
+
+.page-title-row {
+  align-items: flex-start;
+  gap: 0;
+}
+
+.page-title-eyebrow {
+  display: none;
+}
+
+.page-title-mark {
+  display: none;
+}
+
+.page-title-copy h1 {
+  color: var(--text-strong);
+  font-size: var(--text-page-title);
+  font-weight: var(--font-weight-page-title);
+  letter-spacing: -0.025em;
+  line-height: var(--line-height-page-title);
+}
+
+.page .page-header .page-title-copy .subtle {
+  max-width: 58ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-meta);
+  line-height: var(--line-height-meta);
+}
+
+.page-header-meta {
+  gap: 8px;
+  align-self: center;
+  padding-top: 0;
+}
+
+.page-header .btn.primary {
+  border-color: var(--text-strong);
+  background: var(--control-hero-bg);
+  box-shadow: var(--control-hero-shadow);
+}
+
+.page-header .btn.primary:hover {
+  border-color: var(--text-strong);
+  background: var(--control-hero-hover-bg);
+  box-shadow: var(--control-hero-shadow);
+}
+
+.field-label {
+  color: var(--muted-strong);
+  font-size: var(--text-caption);
+  font-weight: var(--font-weight-label);
+  line-height: var(--line-height-caption);
+}
+
+.workbench-leading-panel {
+  min-height: var(--workbench-leading-panel-height);
+}
+
+@media (min-width: 1181px) {
+  .workbench-frame-page:has(> .workbench-leading-panel) {
+    grid-template-rows: auto var(--workbench-leading-panel-height) minmax(0, 1fr);
+    height: var(--workspace-page-height);
+  }
+
+  .workbench-frame-page:has(> .workbench-leading-panel):has(> :is(.notice, .error)) {
+    grid-template-rows: auto var(--workbench-leading-panel-height) auto minmax(0, 1fr);
+  }
+
+  .workbench-frame-page:has(> .workbench-leading-panel):has(> :is(.notice, .error)) > .workbench-frame-workspace {
+    grid-row: 4;
+  }
+
+  .workbench-frame-workspace {
+    min-height: 0;
+    height: 100%;
+  }
+}
+
+.panel,
+.pane {
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-xl);
+  background: var(--panel);
+  box-shadow: var(--surface-card-highlight);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transition: border-color var(--motion-fast) var(--ease-apple);
+}
+
+.pane-header,
+.modal-header {
+  padding: var(--pane-header-pad);
+  border-bottom-color: color-mix(in oklch, var(--line-subtle) 82%, transparent);
+  background: color-mix(in oklch, var(--panel-raised) 76%, transparent);
+}
+
+.pane-header h2,
+.modal-header h2 {
+  font-size: var(--text-section-title);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--line-height-section-title);
+  letter-spacing: -0.025em;
+}
+
+.pane-header h3,
+.modal-header h3 {
+  font-size: var(--text-card-title);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--line-height-card-title);
+}
+
+.detail-section,
+.compact-card,
+.style-summary-card {
+  border-color: color-mix(in oklch, var(--line) 80%, transparent);
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklch, var(--panel-raised) 72%, transparent);
+  box-shadow: var(--surface-inset-highlight);
+  transition:
+    background-color var(--motion-base) var(--ease-apple),
+    border-color var(--motion-base) var(--ease-apple),
+    box-shadow var(--motion-base) var(--ease-apple),
+    transform var(--motion-base) var(--ease-apple);
+}
+
+.empty-state-panel {
+  background: color-mix(in oklch, var(--accent-tint) 46%, var(--glass-panel));
+}
+
+.modal-panel {
+  box-shadow: var(--shadow-lift);
+}
+
+.account-list-button,
+.video-table tbody tr,
+.writer-history-list > *,
+.engagement-history-pane .list-button,
+.douyin-hotlist-item,
+.gross-monitor-card {
+  content-visibility: auto;
+}
+
+.account-list-button,
+.engagement-history-pane .list-button {
+  contain-intrinsic-size: auto 64px;
+}
+
+.video-table tbody tr {
+  contain-intrinsic-size: auto 58px;
+}
+
+.writer-history-list > * {
+  contain-intrinsic-size: auto 72px;
+}
+
+.douyin-hotlist-item {
+  contain-intrinsic-size: auto 132px;
+}
+
+.gross-monitor-card {
+  contain-intrinsic-size: auto 220px;
+}
+
+@media (max-width: 780px) {
+  :root {
+    --page-pad: 12px;
+  }
+
+  .page {
+    width: 100%;
+  }
+
+  .page-header {
+    gap: 12px;
+  }
+
+  .page-header-meta {
+    padding-top: 0;
+  }
+
+  .workbench-leading-panel {
+    min-height: var(--workbench-leading-panel-height-mobile);
+  }
+
+  .panel,
+  .pane {
+    border-radius: var(--radius-lg);
+  }
+}
+
+@media (min-width: 781px) and (max-width: 1180px) {
+  .workbench-leading-panel {
+    min-height: var(--workbench-leading-panel-height-tablet);
+  }
+
+  .workbench-frame-workspace {
+    min-height: var(--workspace-default-height);
+  }
+}
+
+@media (max-width: 780px) {
+  .workbench-frame-workspace {
+    min-height: var(--workspace-default-height);
+  }
+}

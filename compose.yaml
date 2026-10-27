@@ -1,0 +1,30 @@
+services:
+  workbench:
+    image: content-workbench:local
+    build: .
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WORKBENCH_PORT:-3000}:3000"
+    env_file:
+      - path: .env.docker
+        required: false
+    environment:
+      STYLE_LIBRARY_DIR: /data/style-library
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+    volumes:
+      - type: bind
+        source: ${DOCKER_LIBRARY_DIR:-./style-library}
+        target: /data/style-library
+        bind:
+          create_host_path: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3

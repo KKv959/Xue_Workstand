@@ -1,0 +1,16 @@
+# Only application build inputs enter the context. Never send library data or secrets.
+**
+!package.json
+!package-lock.json
+!next.config.mjs
+!middleware.ts
+!next-env.d.ts
+!tsconfig.json
+!src/
+!src/**
+!public/
+!public/**
+!Dockerfile
+.env*
+**/*.pem
+**/*.key
