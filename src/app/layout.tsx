@@ -1,7 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { AppProviders } from "@/components/AppProviders";
 import { AppModeGuard } from "@/components/AppModeGuard";
-import { WorkspaceShell } from "@/components/WorkspaceShell";
+import { AppNav } from "@/components/AppNav";
+import { MobileAppChrome } from "@/components/MobileAppChrome";
 import { getAppMode } from "@/lib/app-mode";
 import "./globals.css";
 
@@ -37,7 +38,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#f1f2f4"
+  themeColor: "#f5f5f7"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -55,7 +56,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </a>
         <AppProviders appMode={appMode} buildId={buildId}>
           <AppModeGuard appMode={appMode} />
-          <WorkspaceShell appMode={appMode}>{children}</WorkspaceShell>
+          <div className="app-shell">
+            <AppNav appMode={appMode} />
+            <MobileAppChrome appMode={appMode} />
+            <main className="main-content" id="main-content">
+              {children}
+            </main>
+          </div>
         </AppProviders>
       </body>
     </html>

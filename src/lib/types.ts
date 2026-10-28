@@ -1514,6 +1514,7 @@ export type JobStartInput =
       input: {
         recordIds?: string[];
         syncProjects?: boolean;
+        syncMustFire?: boolean;
       };
     }
   | {
@@ -1524,3 +1525,10 @@ export type JobStartInput =
       href?: string;
       input: EngagementGenerationRequest;
     };
+
+/** 首屏只携带当前选中视频的预览；完整原稿仍由 transcripts 接口按需读取。 */
+export type LibraryBootstrapResponse = {
+  overview: LibraryOverviewResponse;
+  account: AccountDetail | null;
+  transcript: { videoId: string; preview: string; revision: string | null; error?: string } | null;
+};

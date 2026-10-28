@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, type CSSProperties, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronUp, Copy, FileUp } from "lucide-react";
 
 type AssetTextListProps = {
@@ -81,7 +81,7 @@ export function AssetTextList({
               ? "AI 生成"
               : "";
           return (
-            <p className={origin ? `origin-${origin}` : undefined} key={`${index}-${item}`} style={{ "--ink-item": Math.min(index, 12) } as CSSProperties}>
+            <p className={origin ? `origin-${origin}` : undefined} key={`${index}-${item}`}>
               {item}
               {originLabel ? <span className={`asset-item-origin origin-${origin}`}>{originLabel}</span> : null}
             </p>

@@ -32,3 +32,9 @@ style-library
 # 业务交付、转写稿和个人风格资料仅保留本地
 /deliverables/
 /OiiOii三张风格卡/
+
+# Root-level local documents and UI experiment artifacts
+/*.docx
+/.tmp-*.png
+/]+.js
+/.impeccable/

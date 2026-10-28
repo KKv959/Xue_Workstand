@@ -50,6 +50,10 @@ export function getCachedAccountDetail(input: {
   return accountDetailCache.get(accountDetailCacheKey(input.platform, input.accountId, input)) || null;
 }
 
+export function rememberAccountDetail(detail: AccountDetail, version: string) {
+  remember(accountDetailCache, accountDetailCacheKey(detail.platform, detail.id, { includeStyle: true, version }), detail);
+}
+
 export function invalidateAccountDetail(platform?: Platform, accountId?: string) {
   const prefix = platform && accountId ? accountDetailPrefix(platform, accountId) : "account|";
   deleteMatching(accountDetailCache, prefix);

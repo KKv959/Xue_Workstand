@@ -1,8 +1,9 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronLeft } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { ChevronLeft, FileText, Plus, RefreshCw, X } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { updateLibraryUrl } from "./_components/library-url";
 import { AccountSidebar } from "./_components/AccountSidebar";
 import { AccountStyleEditorModal } from "./_components/AccountStyleEditorModal";
 import { LibraryDetailPane } from "./_components/LibraryDetailPane";
@@ -41,7 +42,6 @@ export default function LibraryPage() {
 }
 
 function LibraryPageContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const mobileView = searchParams.get("mv") === "detail"
     ? "detail"
@@ -69,26 +69,16 @@ function LibraryPageContent() {
   const [collectTimeRange, setCollectTimeRange] = useState<TimeRange>("all");
   const [customFromDate, setCustomFromDate] = useState("");
   const [customToDate, setCustomToDate] = useState("");
-  // 未手动切换前：没有账号时展开采集，已有账号时收起，让账号与视频占满首屏。
-  const [collectPanelChoice, setCollectPanelChoice] = useState<boolean | null>(null);
+  const [refreshBusy, setRefreshBusy] = useState(false);
+  const [collectPanelOpen, setCollectPanelOpen] = useState(true);
   const [lastCollect, setLastCollect] = useState<CollectResult | null>(null);
   const [activeCollectJobId, setActiveCollectJobId] = useState("");
   const setMobileView = useCallback((view: "accounts" | "videos" | "detail") => {
-    const next = new URLSearchParams(searchParams.toString());
-    if (view === "accounts") next.delete("mv");
-    else next.set("mv", view);
-    router.replace(`/library${next.size ? `?${next.toString()}` : ""}`, { scroll: false });
-  }, [router, searchParams]);
+    updateLibraryUrl({ mv: view === "accounts" ? null : view });
+  }, []);
 
   const accounts = useMemo(() => library?.accounts || [], [library?.accounts]);
   const initialLibraryLoading = loading && !library;
-  const collectPanelOpen = collectPanelChoice ?? (!initialLibraryLoading && !accounts.length);
-  const setCollectPanelOpen = useCallback((update: boolean | ((current: boolean) => boolean)) => {
-    setCollectPanelChoice((choice) => {
-      const current = choice ?? (!initialLibraryLoading && !accounts.length);
-      return typeof update === "function" ? update(current) : update;
-    });
-  }, [accounts.length, initialLibraryLoading]);
   const {
     accountFilter,
     accountManageMode,
@@ -213,7 +203,7 @@ function LibraryPageContent() {
     setStyleDraft
   });
 
-  const { generateBatchStyle, handleBatchTranscribe, handleGenerateStyle, handleTranscribe } = useLibraryTaskActions({
+  const { handleBatchTranscribe, handleGenerateStyle, handleTranscribe } = useLibraryTaskActions({
     refresh,
     reloadSelectedAccountDetail,
     selectedAccount,
@@ -317,6 +307,19 @@ function LibraryPageContent() {
     setCollectOrder((currentOrder) => normalizeCollectOrder(nextPlatform, currentOrder));
   }, []);
 
+  const handleRefresh = useCallback(async () => {
+    if (refreshBusy) return;
+    setRefreshBusy(true);
+    try {
+      await refresh();
+      if (selectedAccount) await reloadSelectedAccountDetail({ force: true });
+      setMessage("账号库已刷新。", "success");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "刷新账号库失败", "error");
+    } finally {
+      setRefreshBusy(false);
+    }
+  }, [refresh, refreshBusy, reloadSelectedAccountDetail, selectedAccount, setMessage]);
 
   const handleCollect = useCallback(async () => {
     if (!canCollect) return;
@@ -337,7 +340,7 @@ function LibraryPageContent() {
         }
       });
       setActiveCollectJobId(job.id);
-      setCollectPanelChoice(false);
+      setCollectPanelOpen(false);
       setMessage("采集任务已加入任务中心，可离开页面继续处理。", "info");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "采集失败，请检查账号名、主页链接或 opencli 配置后重试。", "error");
@@ -455,7 +458,20 @@ function LibraryPageContent() {
   if (!loading && !library?.accounts.length) {
     return (
       <div className="page library-page workbench-frame-page">
-        <h1 className="sr-only">账号库</h1>
+        <header className="page-header">
+          <div className="page-title-group">
+            <span className="page-title-eyebrow">账号风格</span>
+            <div className="page-title-row">
+              <span className="page-title-mark" aria-hidden="true">
+                <FileText size={20} strokeWidth={2.1} />
+              </span>
+              <div className="page-title-copy">
+                <h1>账号库</h1>
+                <p className="subtle">采集、转写、风格沉淀。</p>
+              </div>
+            </div>
+          </div>
+        </header>
         <LibraryQuickStartPanel
           activeOrderOptions={activeOrderOptions}
           busy={busy}
@@ -483,6 +499,53 @@ function LibraryPageContent() {
 
   return (
     <div className={`page library-page workbench-frame-page mobile-library-${mobileView}`}>
+      <header className="page-header">
+        <div className="page-title-group">
+          <span className="page-title-eyebrow">账号风格</span>
+          <div className="page-title-row">
+            <span className="page-title-mark" aria-hidden="true">
+              <FileText size={20} strokeWidth={2.1} />
+            </span>
+            <div className="page-title-copy">
+              <h1>账号库</h1>
+              <p className="subtle">采集、转写、风格沉淀。</p>
+            </div>
+          </div>
+        </div>
+        <div className="page-header-meta">
+          <button
+            aria-controls="library-collect-panel"
+            aria-expanded={collectPanelOpen}
+            className={`btn compact ${collectPanelOpen ? "" : "primary"}`}
+            onClick={() => setCollectPanelOpen((current) => !current)}
+            type="button"
+          >
+            {collectPanelOpen ? <X aria-hidden="true" size={16} /> : <Plus aria-hidden="true" size={16} />}
+            {collectPanelOpen ? "收起" : "采集"}
+          </button>
+          <button
+            aria-busy={busy === "recollect"}
+            className="btn compact"
+            disabled={!selectedAccount || Boolean(busy)}
+            onClick={handleRecollectSelectedAccount}
+            type="button"
+          >
+            <RefreshCw aria-hidden="true" size={16} />
+            {busy === "recollect" ? "更新中" : "更新"}
+          </button>
+          <button
+            aria-busy={refreshBusy}
+            aria-label={refreshBusy ? "正在刷新账号库" : "刷新账号库"}
+            className="btn ghost compact icon-btn icon-only"
+            disabled={refreshBusy}
+            onClick={() => void handleRefresh()}
+            title={refreshBusy ? "正在刷新账号库" : "刷新账号库"}
+            type="button"
+          >
+            <RefreshCw aria-hidden="true" size={16} />
+          </button>
+        </div>
+      </header>
 
       <div className="mobile-library-nav" aria-label="账号库层级导航">
         {mobileView !== "accounts" ? (
@@ -534,8 +597,6 @@ function LibraryPageContent() {
       ) : null}
       <section className={`three-pane library-workspace workbench-frame-workspace mobile-view-${mobileView}`}>
         <AccountSidebar
-          collectOpen={collectPanelOpen}
-          onToggleCollect={() => setCollectPanelOpen((current) => !current)}
           accountFilter={accountFilter}
           accountManageMode={accountManageMode}
           accounts={filteredAccounts}
@@ -559,8 +620,6 @@ function LibraryPageContent() {
         />
 
         <VideoTable
-          recollectBusy={busy === "recollect"}
-          onRecollect={selectedAccount && !busy ? handleRecollectSelectedAccount : undefined}
           accountDetailLoading={accountDetailLoading}
           busy={busy}
           effectiveSortMode={effectiveSortMode}
@@ -612,7 +671,7 @@ function LibraryPageContent() {
           transcribeStage={transcribeStage}
           onBatchTranscribe={() => void handleBatchTranscribe()}
           onExportTranscripts={handleExportTranscripts}
-          onGenerateBatchStyle={generateBatchStyle}
+          onGenerateBatchStyle={() => void handleBatchTranscribe({ updateStyle: true })}
           onGenerateStyle={handleGenerateStyle}
           onOpenStyleModal={openStyleModal}
           onOpenTranscriptModal={openTranscriptModal}
@@ -694,8 +753,20 @@ function LibraryPageContent() {
 function LibraryPageFallback() {
   return (
     <div className="page library-page workbench-frame-page">
-      <h1 className="sr-only">账号库</h1>
-      <p className="subtle" role="status">正在读取本地风格库…</p>
+      <header className="page-header">
+        <div className="page-title-group">
+          <span className="page-title-eyebrow">账号风格</span>
+          <div className="page-title-row">
+            <span className="page-title-mark" aria-hidden="true">
+              <FileText size={20} strokeWidth={2.1} />
+            </span>
+            <div className="page-title-copy">
+              <h1>账号库</h1>
+              <p className="subtle">正在读取本地风格库。</p>
+            </div>
+          </div>
+        </div>
+      </header>
     </div>
   );
 }

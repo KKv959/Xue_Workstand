@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ExternalLink, RefreshCw } from "lucide-react";
-import { InkHero } from "@/components/InkHero";
 import { WorkbenchSelect } from "@/components/WorkbenchSelect";
 import { useScopedTasks } from "@/components/TaskProvider";
 import { getTrendRadarNativeStatus } from "@/lib/client";
@@ -52,21 +51,11 @@ export default function TrendRadarReport() {
   const report = state?.report;
   const failedJob = !active && job && ["failed", "interrupted", "cancelled"].includes(job.status) ? job : undefined;
   return <section className="trendradar-report" aria-busy={loading || starting || Boolean(active)}>
-    <InkHero
-      className="trendradar-hero"
-      eyebrow={active ? `正在生成报告 ${Math.round(active.progress || 0)}%` : report ? `报告生成于 ${new Date(report.generatedAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}` : loading ? "正在读取报告" : "还没有报告"}
-      title="热点分析"
-      stats={report ? [
-        { label: "热榜", value: report.counts.hotlist },
-        { label: "RSS", value: report.counts.rss },
-        { label: "命中", value: report.counts.matched, tone: "signal" },
-        { label: "分析", value: report.counts.analyzed }
-      ] : undefined}
-      actions={<>
-        <button className="btn" onClick={() => setRevision(value => value + 1)} aria-label="重新读取已保存报告"><RefreshCw size={16} />读取报告</button>
-        <button className="btn primary" disabled={loading || starting || Boolean(active)} onClick={() => void generate()}>{starting ? "正在启动…" : active ? "生成中…" : "生成报告"}</button>
-      </>}
-    />
+    <header className="trendradar-report-heading"><h1>热点分析</h1><div className="trendradar-report-actions">
+      <button className="btn compact" onClick={() => setRevision(value => value + 1)} aria-label="重新读取已保存报告"><RefreshCw size={16} />读取报告</button>
+      <button className="btn primary" disabled={loading || starting || Boolean(active)} onClick={() => void generate()}>{starting ? "正在启动…" : "生成报告"}</button>
+      </div>
+    </header>
     <details className="trendradar-generation" open={!loading && !report ? true : undefined}>
     <summary>采集设置<span>{settings.mode === "daily" ? "全天汇总" : settings.mode === "current" ? "当前榜单" : "增量更新"} · {settings.filter === "ai" ? "AI 兴趣筛选" : "关键词筛选"}</span></summary>
     <div className="trendradar-generation-body">

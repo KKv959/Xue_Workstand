@@ -18,7 +18,7 @@ function load<T>(file: string, mocks: Record<string, unknown>, extra = "", env =
   const exports = {};
   vm.runInNewContext(ts.transpileModule(readFileSync(file, "utf8") + "\n" + extra, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, esModuleInterop: true }
-  }).outputText, { exports, Buffer, Error, process: { env }, AbortSignal, URL, console,
+  }).outputText, { exports, Buffer, process: { env }, AbortSignal, URL, console,
     require: (name: string) => mocks[name] ?? (["util", "path", "os", "crypto", "net"].includes(name) ? require(name) : {})
   });
   return exports as T;
@@ -185,78 +185,4 @@ test("B站字幕请求取消后不继续尝试轨道", async () => {
   });
   await assert.rejects(client.getBilibiliSubtitle(video("测试"), { signal: controller.signal }), (error) => error === cancelled);
   assert.equal(calls, 1);
-});
-
-const screenshotTranscript = "Me, baby, I'm a sugar Sara, bring a spoon for the senate. free Looking for a.";
-
-function realCleaner() {
-  return load<{ cleanTranscriptText: typeof import("../src/lib/transcript-cleaning").cleanTranscriptText }>("src/lib/transcript-cleaning.ts", {
-    "./pi-runtime": { piEnabled: () => false }
-  });
-}
-
-test("中文标题下的纯英文识别在模型清洗之前拒收，短句与中英混排不误杀", async () => {
-  const { cleanTranscriptText } = realCleaner();
-  await assert.rejects(cleanTranscriptText({ platform: "bilibili", title: "再三对比后，还得是大疆Pocket 4！", text: screenshotTranscript, useModel: true }), /转写结果语言待核实/);
-  for (const text of ["大疆 Pocket 4 支持 4K，DJI 的 Active Track 很好用。", "好", "DJI Pocket 4", "繁體中文測試"]) {
-    assert.ok((await cleanTranscriptText({ platform: "bilibili", title: "中文标题", text })).text);
-  }
-  assert.equal((await cleanTranscriptText({ platform: "douyin", title: "English speech", text: "This is an English speech." })).text, "This is an English speech.");
-  for (const text of ["", "   ", "🎵 BGM ♪"]) {
-    await assert.rejects(cleanTranscriptText({ platform: "bilibili", text }), /没有识别到可用的转写正文/);
-  }
-});
-
-test("账号库重转写遇到截图英文结果时不调用保存，保留旧稿及 revision", async () => {
-  for (const source of ["asr", "subtitle"]) {
-    let saved = 0;
-    const errors: string[] = [];
-    const transcription = load<{ transcribeVideo: typeof transcribeVideo }>("src/lib/transcription.ts", {
-      child_process: { execFile: () => { throw new Error("禁止真实进程"); } },
-      fs: { promises: { rm: async () => {} } },
-      "./opencli": { getBilibiliSubtitle: async () => source === "subtitle" ? screenshotTranscript : "" },
-      "./storage": {
-        getVideo: async () => ({ account, video: video("中文视频", true) }),
-        getTranscriptSnapshot: async () => ({ revision: "old" }),
-        saveTranscript: async () => { saved++; throw new Error("不得覆盖旧稿"); },
-        markTranscriptFailed: async (_p: string, _a: string, _v: string, reason: string) => { errors.push(reason); }
-      },
-      "./transcript-cleaning": realCleaner(),
-      fixture: { text: screenshotTranscript }
-    }, `prepareAudioForVolcengine = async () => ({ mediaPath: '/virtual.mp3', timings: [] });
-        transcribeWithVolcengine = async () => ({ text: require('fixture').text, timings: [] });`);
-    await assert.rejects(transcription.transcribeVideo({ platform: "bilibili", accountId: "test", videoId: "a", mediaPath: "/virtual.mp3" }), /转写结果语言待核实/);
-    assert.equal(saved, 0);
-    if (source === "asr") assert.match(errors[0], /转写结果语言待核实/);
-  }
-});
-
-test("单条链接的音频识别与字幕均不能把中文标题下的英文当作成功正文", async () => {
-  for (const source of ["asr", "subtitle"]) {
-    const transcription = load<{ transcribeLinkSource: typeof import("../src/lib/transcription").transcribeLinkSource }>("src/lib/transcription.ts", {
-      child_process: { execFile: () => { throw new Error("禁止真实进程"); } },
-      fs: { promises: { rm: async () => {} } },
-      "./opencli": { getBilibiliSubtitle: async () => source === "subtitle" ? screenshotTranscript : "" },
-      "./platform-links": { detectPlatformFromLink: () => "bilibili" },
-      "./transcript-cleaning": realCleaner(),
-      fixture: { text: screenshotTranscript }
-    }, `resolveShareUrl = async (url) => url;
-        resolveLinkStatsMetadata = async () => ({ title: '中文视频' });
-        resolveLinkMediaUrl = async () => ({ title: '中文视频', mediaUrls: ['https://example.com/audio'] });
-        downloadFirstAvailableRemoteAudio = async () => ({ mediaPath: '/virtual.mp3', ms: 1, attempts: [] });
-        prepareAudioForVolcengine = async () => ({ mediaPath: '/virtual.mp3', timings: [] });
-        transcribeWithVolcengine = async () => ({ text: require('fixture').text, timings: [] });`);
-    await assert.rejects(transcription.transcribeLinkSource({ url: "https://www.bilibili.com/video/BV1MG5Y65E6w" }), /转写结果语言待核实/);
-  }
-});
-
-test("清洗模型把中文变成英文时保留识别原文并显式报告降级", async () => {
-  const cleaner = load<{ cleanTranscriptText: typeof import("../src/lib/transcript-cleaning").cleanTranscriptText }>("src/lib/transcript-cleaning.ts", {
-    "./pi-runtime": { piEnabled: () => false },
-    "./ai": { getChatRuntimeConfig: () => ({ configured: true }), chatComplete: async () => ({ ok: true, text: screenshotTranscript, model: "test-model" }) }
-  });
-  const result = await cleaner.cleanTranscriptText({ platform: "bilibili", title: "中文视频", text: "这是原始中文口播。", useModel: true });
-  assert.equal(result.text, "这是原始中文口播。");
-  assert.equal(result.fallback, true);
-  assert.match(result.fallbackReason || "", /转写结果语言待核实/);
 });

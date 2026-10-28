@@ -1,11 +1,12 @@
-export const STYLE_CARD_PROMPT_VERSION = 9;
+export const STYLE_CARD_PROMPT_VERSION = 12;
 export const WRITER_REVISION_PROMPT_VERSION = "writer-revision-v13-simple-style";
 export const WRITER_PROMPT_VERSION = "writer-v24-simple-style";
 
 export function styleCardInstruction() {
-  return `读这些原稿，提炼这个作者的讲法，让另一个写手换个主题也能写出相近的感觉。
-重点看口吻、看事情的角度、句子节奏，以及话是怎么一句接一句往下讲的。抓住最有辨识度的特点，用简短自然的话讲清楚，别写成分析报告、固定模板或禁用清单。
-需要举例就用原句，标成 [[来源ID]]「原句」。只输出风格卡。`;
+  return `通读这些原稿，写一份具体、深入的作者风格学习笔记，让另一个写手学会他的思考和表达。
+重点拆解：从素材里怎样发现角度，怎样揣摩观众已有的认识和情绪，怎样安排信息让人继续听，以及具体话术、句式、原声、铺垫、转折和收尾如何配合。
+从作品里前后相接的原话出发，说明这几句话分别做了什么、观众的理解怎么变化、换个题材时能借鉴什么思路。对照不同作品，讲出稳定习惯和题材变化，避免用“口语化、有反差、节奏快”等标签代替分析。原句与自己拟的示例明确区分。
+篇幅不限，按发现自然组织；全文聚焦这个作者的创作方法，不另加通用写作教程、固定模板、检查清单或边界提醒。只输出风格卡。`;
 }
 
 export function writerResearchBoundaryInstruction() {

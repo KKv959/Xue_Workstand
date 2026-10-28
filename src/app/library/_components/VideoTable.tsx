@@ -3,7 +3,7 @@
 import { WorkbenchSelect } from "@/components/WorkbenchSelect";
 
 import { memo } from "react";
-import { ArrowDown, ArrowUp, ListChecks, Download, Search, Trash2, WandSparkles, X, RefreshCw } from "lucide-react";
+import { ArrowDown, ArrowUp, ListChecks, Download, Search, Trash2, WandSparkles, X } from "lucide-react";
 import { formatNumber } from "@/components/Formatters";
 import { StatusPill } from "@/components/StatusPill";
 import type { AccountDetail, AccountListItem, VideoListItem } from "@/lib/types";
@@ -20,8 +20,6 @@ type VideoTableProps = {
   pendingCount: number;
   selectedAccount: AccountDetail | null;
   selectedAccountMeta: AccountListItem | null;
-  recollectBusy: boolean;
-  onRecollect?: () => void;
   selectedVideoId: string;
   selectedVideoIds: string[];
   sortDirection: SortDirection;
@@ -50,8 +48,6 @@ export const VideoTable = memo(function VideoTable({
   pendingCount,
   selectedAccount,
   selectedAccountMeta,
-  recollectBusy,
-  onRecollect,
   selectedVideoId,
   selectedVideoIds,
   sortDirection,
@@ -106,7 +102,7 @@ export const VideoTable = memo(function VideoTable({
     <section className={`pane ${videoManageMode ? "selection-mode" : ""}`}>
       <div className="pane-header video-pane-header">
         <div className="video-header-copy">
-          <h2 key={selectedAccountMeta?.id || "videos"}>{selectedAccountMeta?.name || "视频"}</h2>
+          <h2>视频</h2>
           <p className="pane-subtitle" aria-live="polite">
             {loading || accountDetailLoading
               ? "正在读取"
@@ -114,17 +110,6 @@ export const VideoTable = memo(function VideoTable({
           </p>
         </div>
         <div className="video-header-tools">
-          <button
-            aria-busy={recollectBusy}
-            aria-label="重新采集这个账号的最新视频"
-            className="btn compact icon-only"
-            disabled={!onRecollect}
-            onClick={onRecollect}
-            title="采集最新视频"
-            type="button"
-          >
-            <RefreshCw aria-hidden="true" size={15} className={recollectBusy ? "ink-spin-icon" : ""} />
-          </button>
           <div className="video-filter-search search-control filter-search">
             <Search aria-hidden="true" size={14} />
             <input

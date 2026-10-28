@@ -1,3 +1,4 @@
+import { syncMustFire } from "./gross-margin-must-fire";
 import { runTrendRadarNative } from "./trendradar-native";
 import { trendRadarSettingsSchema } from "./trendradar-native-types";
 import { assistImagePrompt } from "./image-prompt-assist";
@@ -1229,6 +1230,16 @@ async function runHotspotRefreshJob(jobId: string, start: Extract<JobStartInput,
 }
 
 async function runGrossMarginRefreshJob(jobId: string, start: Extract<JobStartInput, { kind: "gross-margin-refresh" }>) {
+  if (start.input.syncMustFire) {
+    await patchJob(jobId, { stage: "load", message: "正在同步必火投放表", progress: 8 });
+    const count = await syncMustFire({ signal: getJobAbortSignal(jobId), onProgress: async attempt => {
+      throwIfCancelled(jobId);
+      await patchTransientJob(jobId, { stage: "load", message: "正在读取必火投放表", progress: Math.min(90, 10 + attempt) });
+    } });
+    await patchJobWithDataChange(jobId, { stage: "saved", message: "必火缓存已更新", progress: 98 }, { resource: "gross-margin" });
+    await completeJob(jobId, { message: `必火投放已同步：${count} 条，另含 3 笔额外投放`, resultRef: { href: "/gross-margin/monitor", label: "查看必火" } });
+    return;
+  }
   if (start.input.syncProjects) {
     await patchJob(jobId, { stage: "load", message: "正在读取企业微信当月项目报价", progress: 8 });
     const source = await syncGrossMarginProjectSource({
@@ -1382,7 +1393,7 @@ function defaultJobTitle(input: JobStartInput) {
   if (input.kind === "single-video-transcribe") return "提取单条视频文案";
   if (input.kind === "publish-copy") return "生成标题与发布文案";
   if (input.kind === "hotspot-refresh") return input.input.trendRadarIds ? "分析 TrendRadar 候选" : input.input.continueAnalysis ? "继续分析热点" : input.input.retryReport ? "重试热点日报" : "刷新热点雷达";
-  if (input.kind === "gross-margin-refresh") return input.input.syncProjects ? "同步当月项目报价" : "批量刷新数据监控";
+  if (input.kind === "gross-margin-refresh") return input.input.syncMustFire ? "同步必火投放" : input.input.syncProjects ? "同步当月项目报价" : "批量刷新数据监控";
   if (input.input.sourceType === "record") return "补齐评论素材";
   return "生成评论素材";
 }

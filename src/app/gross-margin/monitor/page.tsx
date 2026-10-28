@@ -1,7 +1,6 @@
 "use client";
 
 import { Button, Menu, MenuItem, MenuTrigger, Popover } from "react-aria-components";
-import { InkHero } from "@/components/InkHero";
 import { WorkbenchSelect } from "@/components/WorkbenchSelect";
 import { Suspense, useEffect, useMemo, useRef, useState, type WheelEvent } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -266,6 +265,20 @@ function GrossMarginMonitorPageContent() {
     notify({ tone: "error", message: job.error || job.message || "批量刷新未完成" });
   }, [activeJobs, activeRefreshJobId, notify, recentJobs]);
 
+  async function handleSyncMustFire() {
+    if (busy || activeJobs.length || startingRefreshRef.current) return;
+    startingRefreshRef.current = true;
+    setBusy("refresh-all");
+    try {
+      const job = await startTask({ kind: "gross-margin-refresh", href: "/gross-margin/monitor", input: { syncMustFire: true } });
+      setActiveRefreshJobId(job.id);
+      notify({ tone: "info", message: "必火同步已加入任务中心，失败时保留上次成功缓存" });
+    } catch (cause) {
+      setBusy("");
+      notify({ tone: "error", message: cause instanceof Error ? cause.message : "必火同步失败" });
+    } finally { startingRefreshRef.current = false; }
+  }
+
   async function handleRefreshOne(recordId: string) {
     if (busy || startingRefreshRef.current || activeRefreshJobId || activeJobs.length) return;
     startingRefreshRef.current = true;
@@ -374,17 +387,19 @@ function GrossMarginMonitorPageContent() {
 
   return (
     <div className="page gross-margin-page gross-monitor-page">
-      <InkHero
-        className="gross-monitor-hero"
-        eyebrow={hasActiveFilters ? `数据 · 已筛选 ${sortedRecords.length} / ${records.length} 条` : "数据 · 每小时自动抓取"}
-        title="数据监控"
-        stats={[
-          { label: "监控中", value: sortedRecords.length },
-          { label: "高缺口", value: overview.highGapCount, tone: overview.highGapCount ? "danger" : undefined },
-          { label: "抓取异常", value: overview.refreshIssueCount, tone: overview.refreshIssueCount ? "warning" : undefined }
-        ]}
-      />
+      <h1 className="sr-only">数据监控</h1>
       <div className="gross-monitor-topbar">
+        <div className="page-header-meta gross-monitor-overview" aria-label="监控概览">
+          <span className="gross-monitor-count">
+            <strong>{sortedRecords.length}</strong>{hasActiveFilters ? `/${records.length}` : ""}条
+          </span>
+          {overview.highGapCount > 0 ? (
+            <span className="stat-pill gross-monitor-stat danger"><AlertTriangle aria-hidden="true" size={12} />高缺口 <strong>{overview.highGapCount}</strong></span>
+          ) : null}
+          {overview.refreshIssueCount > 0 ? (
+            <span className="stat-pill gross-monitor-stat warning"><AlertTriangle aria-hidden="true" size={12} />异常 <strong>{overview.refreshIssueCount}</strong></span>
+          ) : null}
+        </div>
         <div className="gross-monitor-toolbar">
           <div className="gross-monitor-inline-filters" role="group" aria-label="监控筛选">
             <span className="gross-monitor-search-field">
@@ -445,6 +460,7 @@ function GrossMarginMonitorPageContent() {
             ) : null}
           </div>
           <div className="button-row gross-monitor-primary-action">
+            <button className="btn compact" type="button" disabled={Boolean(busy) || activeJobs.length > 0} onClick={() => void handleSyncMustFire()} title="手动同步必火投放金额，平时使用成功缓存">同步必火</button>
             <button className="btn primary compact" title="自动每小时抓取；点击立即刷新当前范围" aria-label={hasActiveFilters ? "立即刷新筛选记录" : "立即刷新全部记录"} disabled={busy === "refresh-all" || !sortedRecords.length} onClick={() => void handleRefreshAll()} type="button">
               <RefreshCw aria-hidden="true" size={15} />
               {busy === "refresh-all" ? "刷新中" : "刷新"}

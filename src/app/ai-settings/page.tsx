@@ -153,7 +153,7 @@ export default function AiSettingsPage() {
   const connected = selected?.connected;
   const dirty = Boolean(settings && (settings.provider !== provider || settings.model !== model || settings.thinking !== thinking));
   return <div className="page ai-settings-page">
-    <h1 className="sr-only">AI 模型配置</h1>
+    <header className="page-header"><div><h1>AI 模型配置</h1><p>管理订阅与默认模型</p></div></header>
     {error && <p role="alert" className="ai-settings-notice error">{error}</p>}
     {message && <p role="status" className="ai-settings-notice">{message}</p>}
     <section className="panel ai-settings-section ai-settings-subscription" aria-labelledby="subscription-heading" aria-busy={busy} data-unsaved-changes={dirty ? "true" : undefined}>

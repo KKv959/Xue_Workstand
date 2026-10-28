@@ -17,6 +17,7 @@ import {
   retryJob as retryJobRequest,
   startJob
 } from "@/lib/client";
+import { invalidateTranscriptCache } from "@/lib/transcript-cache";
 import { invalidateAccountDetail } from "@/lib/detail-cache";
 import { formatJobErrorMessage } from "@/lib/job-messages";
 import { defaultJobHref, getJobResultHref } from "@/lib/job-links";
@@ -45,7 +46,7 @@ const ROUTE_TASK_REFRESH_DELAY_MS = 800;
 
 export function TaskProvider({ children, allowedKinds }: { children: React.ReactNode; allowedKinds?: JobKind[] }) {
   const pathname = usePathname();
-  const { refresh } = useLibrary();
+  const { refresh, loading: libraryLoading } = useLibrary();
   const { notify } = useFeedback();
   const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,6 +55,7 @@ export function TaskProvider({ children, allowedKinds }: { children: React.React
   const jobsRef = useRef<JobRecord[]>([]);
   const cursorRef = useRef<string | undefined>(undefined);
   const firstLoadRef = useRef(true);
+  const mountedAtRef = useRef(Date.now());
   const fullJobCacheRef = useRef<Map<string, JobRecord>>(new Map());
   const initialFailureShownRef = useRef(false);
   const notifiedRef = useRef<Set<string>>(new Set());
@@ -113,7 +115,8 @@ export function TaskProvider({ children, allowedKinds }: { children: React.React
           firstLoadRef.current,
           previousStatusRef.current,
           previousDataRevisionRef.current,
-          refresh
+          refresh,
+          mountedAtRef.current
         );
         handleJobNotifications(
           mergedJobs,
@@ -167,11 +170,12 @@ export function TaskProvider({ children, allowedKinds }: { children: React.React
   }, [pathname, refreshJobs]);
 
   useEffect(() => {
+    if (libraryLoading) return;
     const timeoutId = window.setTimeout(() => {
       void refreshJobs();
     }, INITIAL_TASK_REFRESH_DELAY_MS);
     return () => window.clearTimeout(timeoutId);
-  }, [refreshJobs]);
+  }, [refreshJobs, libraryLoading]);
 
   useEffect(() => {
     const onFocus = () => {
@@ -334,7 +338,8 @@ function handleJobDataSync(
   isFirstLoad: boolean,
   previousStatus: Map<string, JobRecord["status"]>,
   previousDataRevision: Map<string, number>,
-  refreshLibrary: (options?: { force?: boolean }) => Promise<void>
+  refreshLibrary: (options?: { force?: boolean }) => Promise<void>,
+  mountedAt: number
 ) {
   let libraryChanged = false;
   const nextDataRevision = new Map<string, number>();
@@ -342,11 +347,11 @@ function handleJobDataSync(
   for (const job of jobs) {
     const dataRevision = job.dataRevision || 0;
     nextDataRevision.set(job.id, dataRevision);
-    // 首次读取没有基线版本，历史任务的 dataRevision 不代表数据刚变；只按“最近完成”判断，避免进页即清缓存重拉。
+    // 历史完成任务只建立基线；挂载后完成/分批落盘的任务仍同步，覆盖首屏读取期间的竞态。
     const dataChanged = !isFirstLoad && dataRevision > (previousDataRevision.get(job.id) || 0);
-    const becameCompleted = job.status === "completed" && previousStatus.get(job.id) !== "completed";
-    const recentCompletedOnFirstLoad = isFirstLoad && job.status === "completed" && isRecentJob(job);
-    if (!dataChanged && !becameCompleted && !recentCompletedOnFirstLoad) continue;
+    const becameCompleted = !isFirstLoad && job.status === "completed" && previousStatus.get(job.id) !== "completed";
+    const changedDuringInitialLoad = isFirstLoad && +new Date(job.updatedAt) >= mountedAt && (dataRevision > 0 || job.status === "completed");
+    if (!dataChanged && !becameCompleted && !changedDuringInitialLoad) continue;
     libraryChanged = invalidateJobClientCaches(job) || libraryChanged;
   }
 
@@ -382,6 +387,7 @@ function invalidateJobClientCaches(job: JobRecord) {
   if (updatesAccount) {
     const platform = job.scope?.platform;
     const accountId = job.dataChange?.accountId || job.scope?.accountId;
+    invalidateTranscriptCache(platform, accountId, job.kind === "transcribe-video" ? job.scope?.videoId : undefined);
     if (platform && accountId) invalidateAccountDetail(platform, accountId);
     else invalidateAccountDetail();
   }

@@ -2,34 +2,35 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LibraryBig, Flame, Home, Menu, PenLine, Sword } from "lucide-react";
+import { LibraryBig, Layers2, Flame, Home, Menu, PenLine, Sword } from "lucide-react";
+import { navPrefetch, useNavIntent } from "./useNavIntent";
 import { SkinToggle } from "./SkinToggle";
 import { TaskCenter } from "./TaskCenter";
 import { useRemoteStatus } from "./RemoteStatusProvider";
 import type { AppMode } from "@/lib/app-mode";
 
-// 手机底栏与桌面图标栏同一套空间：今天 + 发现 / 素材 / 创作，数据与系统收进“更多”。
 const primaryItems = [
-  { href: "/mobile", label: "今天", icon: Home, exact: true },
-  { href: "/douyin-hotlist", label: "发现", icon: Flame, also: ["/hotspots"] },
-  { href: "/library", label: "素材", icon: LibraryBig },
-  { href: "/writer", label: "创作", icon: PenLine, also: ["/assets", "/images", "/tools"] },
+  { href: "/mobile", label: "首页", icon: Home, exact: true },
+  { href: "/douyin-hotlist", label: "热榜", icon: Flame },
+  { href: "/library", label: "账号库", icon: LibraryBig },
+  { href: "/writer", label: "写作", icon: PenLine },
   { href: "/mobile/more", label: "更多", icon: Menu, more: true }
 ];
 
-const secondaryPrefixes = ["/gross-margin", "/ai-settings"];
+const secondaryPrefixes = ["/hotspots", "/assets", "/tools", "/gross-margin"];
 
 export function MobileAppChrome({ appMode }: { appMode: AppMode }) {
   const pathname = usePathname();
   const remote = useRemoteStatus();
+  const { linkProps } = useNavIntent();
   if (appMode === "gross-margin") return null;
 
   return (
     <>
       <header className="mobile-top-bar">
-        <Link className="mobile-top-brand" href="/mobile">
+        <Link className="mobile-top-brand" href="/mobile" prefetch={navPrefetch} {...linkProps("/mobile")}>
           <span className="mobile-top-mark" aria-hidden="true">
-            <span className="mobile-top-mark-default">风</span>
+            <Layers2 className="mobile-top-mark-default" size={21} strokeWidth={1.75} />
             <Sword className="mobile-top-mark-shinigami" size={19} strokeWidth={2} />
           </span>
           <span className="mobile-brand-copy mobile-brand-copy-default">
@@ -46,6 +47,7 @@ export function MobileAppChrome({ appMode }: { appMode: AppMode }) {
           <Link
             className={`remote-status-chip ${remote.connection}`}
             href="/mobile/more#service-status"
+            prefetch={navPrefetch} {...linkProps("/mobile/more")}
             aria-label={`后台状态：${connectionLabel(remote.connection)}`}
           >
             <span aria-hidden="true" />
@@ -63,6 +65,7 @@ export function MobileAppChrome({ appMode }: { appMode: AppMode }) {
               aria-current={active ? "page" : undefined}
               className={`mobile-tab-link ${active ? "active" : ""}`}
               href={item.href}
+              prefetch={navPrefetch} {...linkProps(item.href)}
               key={item.href}
             >
               <Icon aria-hidden="true" size={21} strokeWidth={1.75} />
@@ -77,13 +80,13 @@ export function MobileAppChrome({ appMode }: { appMode: AppMode }) {
 
 function isActiveItem(
   pathname: string,
-  item: { href: string; exact?: boolean; more?: boolean; also?: string[] }
+  item: { href: string; exact?: boolean; more?: boolean }
 ) {
   if (item.more) {
     return pathname.startsWith(item.href) || secondaryPrefixes.some((prefix) => pathname.startsWith(prefix));
   }
   if (item.exact) return pathname === item.href;
-  return [item.href, ...(item.also ?? [])].some((href) => pathname === href || pathname.startsWith(`${href}/`));
+  return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
 
 function connectionLabel(connection: ReturnType<typeof useRemoteStatus>["connection"]) {

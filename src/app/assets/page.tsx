@@ -2,8 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { InkHero } from "@/components/InkHero";
-import { RefreshCw } from "lucide-react";
+import { MessageSquarePlus, RefreshCw } from "lucide-react";
 import { AssetsFeishuModal } from "./_components/AssetsFeishuModal";
 import { EngagementGeneratorPane } from "./_components/EngagementGeneratorPane";
 import { EngagementHistoryPane } from "./_components/EngagementHistoryPane";
@@ -268,28 +267,29 @@ function AssetsPageContent() {
     setNotice(message);
   }
 
-  const engagementTotals = records.reduce((totals, record) => ({
-    comments: totals.comments + record.commentCount,
-    danmaku: totals.danmaku + record.danmakuCount
-  }), { comments: 0, danmaku: 0 });
-
   return (
     <div className="page assets-page">
-      <InkHero
-        eyebrow={recordsLoading ? "创作 · 正在读取记录" : "创作 · 评论与弹幕"}
-        title="评论生成"
-        stats={[
-          { label: "记录", value: records.length },
-          { label: "评论", value: engagementTotals.comments },
-          { label: "弹幕", value: engagementTotals.danmaku }
-        ]}
-        actions={
-          <button className="btn" onClick={() => void handleRefresh()} type="button">
-            <RefreshCw size={16} aria-hidden="true" />
-            刷新记录
+      <header className="page-header">
+        <div className="page-title-group">
+          <span className="page-title-eyebrow">互动素材</span>
+          <div className="page-title-row">
+            <span className="page-title-mark" aria-hidden="true">
+              <MessageSquarePlus size={20} strokeWidth={2.1} />
+            </span>
+            <div className="page-title-copy">
+              <h1>评论生成</h1>
+              <p className="subtle">读取正文，匹配真实参考后生成。</p>
+            </div>
+          </div>
+        </div>
+        <div className="page-header-meta">
+          <span className="stat-pill">{recordsLoading ? "读取中" : `${records.length} 条记录`}</span>
+          <button className="btn ghost" onClick={() => void handleRefresh()} type="button">
+            <RefreshCw size={16} />
+            刷新
           </button>
-        }
-      />
+        </div>
+      </header>
 
       <section className="engagement-workbench">
         <section className="panel engagement-main">

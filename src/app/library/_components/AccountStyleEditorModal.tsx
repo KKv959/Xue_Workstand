@@ -62,7 +62,7 @@ export const AccountStyleEditorModal = memo(function AccountStyleEditorModal({
             保存
           </button>
         </div>
-        <p className="subtle">按全部原文重新归纳适用写法，复用未变化的分析；成功后保留旧卡历史。</p>
+        <p className="subtle">从完整原稿学习创作思路、话术表达和抓住观众的方法，结合原句讲透。归纳成功后保留旧卡历史。</p>
         {busy === "style" ? <p className="subtle">{styleStage}</p> : null}
       </div>
     </LibraryEditorModal>

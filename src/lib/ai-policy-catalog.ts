@@ -5,7 +5,7 @@ export type AiPolicyValue = { model: string; effort: AiEffort | "default"; sourc
 export const AI_POLICIES = [
   { id: "trendradar", group: "热点分析", title: "TrendRadar 报告", description: "热点兴趣筛选、趋势分析与报告翻译共用此配置。", model: "gpt-5.6-sol", effort: "default" },
   { id: "account_sample", group: "风格学习", title: "历史账号样本分析", description: "已改为原文直接归纳，仅保留历史配置兼容。", model: "", effort: "medium", retired: true },
-  { id: "account_style", group: "风格学习", title: "账号风格卡", description: "从代表原文直接归纳风格，一次生成简明卡片。", model: "", effort: "medium" },
+  { id: "account_style", group: "风格学习", title: "账号风格卡", description: "通读完整原稿，学习创作思路、话术表达与吸引观众的方法。", model: "", effort: "medium" },
   { id: "writer_generate", group: "对话写作", title: "正文生成", description: "主题写作、改写和多风格独立生成。", model: "", effort: "medium" },
   { id: "writer_revise", group: "对话写作", title: "草稿续改", description: "使用当前草稿与已保存资料生成新版本。", model: "", effort: "medium" },
   { id: "writer_prompt", group: "对话写作", title: "写作要求 AI 润色", description: "润色写作台的写作要求，保留原意，不生成正文。", model: "gpt-6.1-sol", effort: "low" },

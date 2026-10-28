@@ -8,7 +8,7 @@ import { WRITER_REVISION_PROMPT_VERSION, revisionWriteInstruction, STYLE_CARD_PR
 import { logPipelineEvent } from "./observability";
 import { cachedWriterResearch, WriterResearchCacheError } from "./storage/writer-research";
 import { writerResearchForWriting, WRITER_SEARCH_TIMEOUT_MS, WRITER_SEARCH_MAX_OUTPUT_TOKENS } from "./writer-research";
-import { selectStyleReferences, STYLE_REFERENCE_CANDIDATES, STYLE_REFERENCE_VERSION } from "./style-reference";
+import { collectStyleOriginals, STYLE_REFERENCE_VERSION } from "./style-reference";
 import {
   WRITER_PROMPT_VERSION,
   validateStyleCardCitations,
@@ -211,6 +211,7 @@ const WRITE_PROMPT_VERSION = WRITER_PROMPT_VERSION;
 const WEB_RESEARCH_TIMEOUT_MS = 180_000;
 const MODEL_REQUEST_TIMEOUT_MS = boundedEnvInteger("CHAT_REQUEST_TIMEOUT_MS", 120_000, 10_000, 300_000);
 const WRITER_REQUEST_TIMEOUT_MS = boundedEnvInteger("CHAT_REQUEST_TIMEOUT_MS", 300_000, 10_000, 300_000);
+const STYLE_REQUEST_TIMEOUT_MS = boundedEnvInteger("CHAT_REQUEST_TIMEOUT_MS", 300_000, 10_000, 300_000);
 
 class StreamResponseTextError extends Error {
   partialText: string;
@@ -482,7 +483,7 @@ async function preferPi(
   try {
     const result = await withModelTimeout(signal => runPiModel(request, {
       signal, onDelta(delta) { partial += delta; options.onDelta?.(delta); }
-    }), options.signal, options.policy === "writer_generate" || options.policy === "writer_revise" ? WRITER_REQUEST_TIMEOUT_MS : MODEL_REQUEST_TIMEOUT_MS, "Pi 模型请求");
+    }), options.signal, options.policy === "account_style" ? STYLE_REQUEST_TIMEOUT_MS : options.policy === "writer_generate" || options.policy === "writer_revise" ? WRITER_REQUEST_TIMEOUT_MS : MODEL_REQUEST_TIMEOUT_MS, "Pi 模型请求");
     return { ...result, backend: "pi" };
   } catch (error) {
     throwIfAborted(options.signal);
@@ -530,7 +531,7 @@ async function streamResponseTextLegacy(input: {
       throwIfAborted(input.signal);
       try {
         const result = await streamResponseTextForConfig(config, { ...input, requireCompleted: true },
-          input.policy === "writer_generate" || input.policy === "writer_revise" ? WRITER_REQUEST_TIMEOUT_MS : MODEL_REQUEST_TIMEOUT_MS);
+          input.policy === "account_style" ? STYLE_REQUEST_TIMEOUT_MS : input.policy === "writer_generate" || input.policy === "writer_revise" ? WRITER_REQUEST_TIMEOUT_MS : MODEL_REQUEST_TIMEOUT_MS);
         return config !== configs[0] && lastError
           ? { ...result, fallback: true, fallbackReason: `${classifyModelFailure(lastError).userMessage}，已使用备用对话模型节点。` }
           : result;
@@ -946,7 +947,8 @@ async function chatCompleteWithConfig(
 ): Promise<ChatCompletionResult> {
   return withModelTimeout(
     (signal) => chatCompleteWithConfigInner(config, messages, reasoningEffort, tools, { ...options, signal }),
-    options.signal
+    options.signal,
+    options.policy === "account_style" ? STYLE_REQUEST_TIMEOUT_MS : MODEL_REQUEST_TIMEOUT_MS
   );
 }
 
@@ -1970,9 +1972,9 @@ export async function prepareAccountStyleContext(
 ): Promise<PreparedAccountStyleContext> {
   const account = await resolveAccount(platform, accountId);
   throwIfAborted(options.signal);
-  const candidates = await getTopTranscriptSamples(platform, accountId, STYLE_REFERENCE_CANDIDATES);
+  const candidates = await getTopTranscriptSamples(platform, accountId, "all");
   throwIfAborted(options.signal);
-  const selected = selectStyleReferences(candidates);
+  const selected = collectStyleOriginals(candidates);
   const selectedIds = new Set(selected.map(sample => sample.id));
   const samples = candidates.filter(sample => selectedIds.has(sample.video.id));
 
@@ -2006,19 +2008,17 @@ export async function prepareAccountStyleContext(
   const inputChars = selected.reduce((sum, sample) => sum + sample.text.length, 0);
   const stats = { ...emptyStyleAnalysisStats(), inputChars };
   options.onAnalysisProgress?.({ ...stats, completedCount: 0,
-    message: `已选取 ${selected.length} 篇去重原文，直接归纳风格卡` });
+    message: `正在完整学习 ${selected.length} 篇原稿的思路与表达` });
   const messages: ChatMessage[] = [
     { role: "system", content: styleCardInstruction() },
-    { role: "user", content: JSON.stringify({ account: account.name, platform,
-      sampleCount: selected.length,
-      sources: selected.map(sample => ({ sourceId: sample.id, title: sample.title,
-        excerpts: sample.passages, excerpted: sample.passages.length > 1 })) }) }
+    { role: "user", content: JSON.stringify({ account: account.name,
+      originals: selected.map(sample => ({ title: sample.title, text: sample.text })) }) }
   ];
   return {
     platform, accountId, accountName: account.name, messages, fallback: currentStyle,
     ...sampleState, generationMode: "full", analysisStats: stats,
     previousStyleHash: shortHash(currentStyle),
-    evidenceQuotes: selected.flatMap(sample => sample.passages.map(quote => ({ sourceId: sample.id, quote })))
+    evidenceQuotes: selected.map(sample => ({ sourceId: sample.id, quote: sample.text }))
   };
 }
 

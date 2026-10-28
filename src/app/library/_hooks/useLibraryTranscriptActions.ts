@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getTranscript, restoreTranscriptVersion, saveTranscript } from "@/lib/client";
+import { getCachedTranscript, invalidateTranscriptCache, rememberTranscript } from "@/lib/transcript-cache";
 import type { AccountDetail, TranscriptVersion, VideoListItem } from "@/lib/types";
 import { canReadTranscript, makePreview, type LibraryMessageSetter } from "../_components/library-view-utils";
 
@@ -33,12 +34,16 @@ export function useLibraryTranscriptActions({
   const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [transcriptError, setTranscriptError] = useState("");
   const requestSeqRef = useRef(0);
+  const loadedVersionRef = useRef<string | undefined>(undefined);
+  const draftDirtyRef = useRef(false);
   const pendingRef = useRef<Promise<boolean> | null>(null);
   const [transcriptRestoring, setTranscriptRestoring] = useState(false);
   const [transcriptStale, setTranscriptStale] = useState(false);
 
+  const [transcriptComplete, setTranscriptComplete] = useState(false);
+  const selectionKey = `${selectedAccount?.platform}|${selectedAccount?.id}|${selectedVideo?.id}`;
   const selectedVideoHasTranscript = canReadTranscript(selectedVideo);
-  const activeTranscript = selectedVideo && transcriptVideoId === selectedVideo.id ? transcript : "";
+  const activeTranscript = selectedVideo && transcriptVideoId === selectionKey ? transcript : "";
   const transcriptPreview = useMemo(() => makePreview(activeTranscript), [activeTranscript]);
 
   const clearTranscript = useCallback(() => {
@@ -51,13 +56,21 @@ export function useLibraryTranscriptActions({
     setTranscriptVersions([]);
     setTranscriptVideoId("");
     setTranscriptStale(false);
+    setTranscriptComplete(false);
+    draftDirtyRef.current = false;
+    loadedVersionRef.current = undefined;
   }, []);
 
   const invalidateTranscript = useCallback(() => {
+    invalidateTranscriptCache(selectedAccount?.platform, selectedAccount?.id, selectedVideo?.id);
     requestSeqRef.current += 1;
     pendingRef.current = null;
+    if (draftDirtyRef.current) {
+      setTranscriptError("原稿已有更新，当前未保存修改已保留；保存时会校验版本，请先备份修改再重新打开最新原稿。");
+      return;
+    }
     setTranscriptStale(true);
-  }, []);
+  }, [selectedAccount?.platform, selectedAccount?.id, selectedVideo?.id]);
 
   useEffect(() => {
     clearTranscript();
@@ -67,9 +80,10 @@ export function useLibraryTranscriptActions({
   const accountId = selectedAccount?.id;
   const platform = selectedAccount?.platform;
   const videoId = selectedVideo?.id;
-  const loadSelectedTranscript = useCallback(async () => {
+  const version = selectedVideo?.transcriptRevision;
+  const loadSelectedTranscript = useCallback(async (requireFull = false) => {
     if (!accountId || !platform || !videoId || !selectedVideoHasTranscript) return false;
-    if (transcriptVideoId === videoId && !transcriptStale) return true;
+    if (transcriptVideoId === selectionKey && !transcriptStale && (!requireFull || transcriptComplete) && (draftDirtyRef.current || loadedVersionRef.current === version)) return true;
     if (pendingRef.current) return pendingRef.current;
 
     const requestSeq = ++requestSeqRef.current;
@@ -77,13 +91,18 @@ export function useLibraryTranscriptActions({
     setTranscriptError("");
     const request = (async () => {
       try {
-        const result = await getTranscript({ platform, accountId, videoId });
+        const cached = !transcriptStale ? getCachedTranscript({ platform, accountId, videoId, version }) : null;
+        const result = cached && (!requireFull || cached.complete) ? await Promise.resolve(cached) : await getTranscript({ platform, accountId, videoId, version });
         // 快速切换视频时，迟到的响应不能覆盖新选中项或打开错误原稿。
         if (requestSeq !== requestSeqRef.current) return false;
+        if ("error" in result && result.error) throw new Error(String(result.error));
+        loadedVersionRef.current = version;
+        draftDirtyRef.current = false;
         setTranscript(result.transcript);
         setTranscriptRevision(result.revision);
         setTranscriptVersions(result.versions);
-        setTranscriptVideoId(videoId);
+        setTranscriptVideoId(selectionKey);
+        setTranscriptComplete("complete" in result ? Boolean(result.complete) : true);
         setTranscriptStale(false);
         return true;
       } catch (err) {
@@ -101,7 +120,7 @@ export function useLibraryTranscriptActions({
     })();
     pendingRef.current = request;
     return request;
-  }, [accountId, platform, videoId, selectedVideoHasTranscript, setMessage, transcriptStale, transcriptVideoId]);
+  }, [accountId, platform, videoId, selectedVideoHasTranscript, setMessage, transcriptStale, transcriptVideoId, transcriptComplete, selectionKey, version]);
 
   useEffect(() => {
     void loadSelectedTranscript();
@@ -110,16 +129,17 @@ export function useLibraryTranscriptActions({
   const openTranscriptModal = useCallback(async () => {
     if (!selectedVideo) return;
     if (selectedVideoHasTranscript) {
-      const loaded = await loadSelectedTranscript();
+      const loaded = await loadSelectedTranscript(true);
       if (!loaded) return;
     }
     onOpenEditor();
   }, [loadSelectedTranscript, onOpenEditor, selectedVideo, selectedVideoHasTranscript]);
 
   const updateTranscriptDraft = useCallback((value: string) => {
+    draftDirtyRef.current = true;
     setTranscript(value);
-    setTranscriptVideoId(selectedVideo?.id || "");
-  }, [selectedVideo?.id]);
+    setTranscriptVideoId(selectionKey);
+  }, [selectionKey]);
 
   const handleSaveTranscript = useCallback(async (setBusy: (value: string) => void) => {
     if (!selectedAccount || !selectedVideo) return;
@@ -133,10 +153,13 @@ export function useLibraryTranscriptActions({
         transcript,
         expectedRevision: transcriptRevision
       });
+      draftDirtyRef.current = false;
       setTranscript(result.transcript);
       setTranscriptRevision(result.revision);
       setTranscriptVersions(result.versions);
-      setTranscriptVideoId(selectedVideo.id);
+      rememberTranscript({ platform: selectedAccount.platform, accountId: selectedAccount.id, videoId: selectedVideo.id }, { ...result, complete: true });
+      setTranscriptVideoId(selectionKey);
+      setTranscriptComplete(true);
       setTranscriptStale(false);
       setMessage(result.previousVersionCreated ? "转写稿已保存，旧稿已归档到历史版本。" : "转写稿已保存。", "success");
       onSaved();
@@ -147,7 +170,7 @@ export function useLibraryTranscriptActions({
     } finally {
       setBusy("");
     }
-  }, [onSaved, refresh, reloadSelectedAccountDetail, selectedAccount, selectedVideo, setMessage, transcript, transcriptRevision]);
+  }, [onSaved, refresh, reloadSelectedAccountDetail, selectedAccount, selectedVideo, setMessage, transcript, transcriptRevision, selectionKey]);
 
   const handleRestoreTranscript = useCallback(async (versionId: string) => {
     if (!selectedAccount || !selectedVideo || !versionId) return;
@@ -161,10 +184,13 @@ export function useLibraryTranscriptActions({
         versionId,
         expectedRevision: transcriptRevision
       });
+      draftDirtyRef.current = false;
       setTranscript(result.transcript);
       setTranscriptRevision(result.revision);
       setTranscriptVersions(result.versions);
-      setTranscriptVideoId(selectedVideo.id);
+      rememberTranscript({ platform: selectedAccount.platform, accountId: selectedAccount.id, videoId: selectedVideo.id }, { ...result, complete: true });
+      setTranscriptVideoId(selectionKey);
+      setTranscriptComplete(true);
       setTranscriptStale(false);
       setMessage("已恢复转写历史版本。", "success");
       await refresh();
@@ -174,7 +200,7 @@ export function useLibraryTranscriptActions({
     } finally {
       setTranscriptRestoring(false);
     }
-  }, [refresh, reloadSelectedAccountDetail, selectedAccount, selectedVideo, setMessage, transcriptRevision]);
+  }, [refresh, reloadSelectedAccountDetail, selectedAccount, selectedVideo, setMessage, transcriptRevision, selectionKey]);
 
   return {
     activeTranscript,

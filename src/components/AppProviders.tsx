@@ -22,7 +22,7 @@ export function AppProviders({
   return (
     <RemoteStatusProvider currentBuildId={buildId}>
       <FeedbackProvider>
-        <LibraryProvider enabled={needsLibrary}>
+        <LibraryProvider enabled={needsLibrary} bootstrap={pathname === "/library"}>
           <TaskProvider allowedKinds={appMode === "gross-margin" ? ["gross-margin-refresh"] : undefined}>
             {children}
           </TaskProvider>

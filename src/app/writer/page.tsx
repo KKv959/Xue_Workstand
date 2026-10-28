@@ -2,7 +2,7 @@
 
 import { WorkbenchSelect } from "@/components/WorkbenchSelect";
 
-import { Suspense, type CSSProperties, type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   BookOpenText,
@@ -65,7 +65,7 @@ import {
   splitWriterSourceInput
 } from "@/lib/source-extraction";
 import { appendWriterSourceFiles, WRITER_SOURCE_FILE_ACCEPT } from "@/lib/source-file-import";
-import { formatLongDraftForDisplay } from "@/lib/writer-display";
+import { formatLongDraftForDisplay, LONG_DRAFT_DISPLAY_THRESHOLD } from "@/lib/writer-display";
 import type {
   AccountListItem,
   Draft,
@@ -150,12 +150,8 @@ function WriterPageContent() {
             setStyleRefs([{ targetType: "account", platform, accountId: draft.accountId }]);
           }
         }
-        // 从热榜“用它写”等入口带着 prompt / sourceText 进来时，以链接为准，不用会话草稿覆盖
-        // （开发模式 StrictMode 会让本 effect 在链接参数应用后再执行一次）。
-        const urlParams = new URLSearchParams(window.location.search);
-        const urlCarriesInput = urlParams.has("prompt") || urlParams.has("sourceText") || urlParams.has("draftId");
-        if (typeof draft.prompt === "string" && !urlCarriesInput) setPrompt(draft.prompt);
-        if (!urlCarriesInput && (typeof draft.sourceText === "string" || typeof draft.supportDocLinks === "string")) {
+        if (typeof draft.prompt === "string") setPrompt(draft.prompt);
+        if (typeof draft.sourceText === "string" || typeof draft.supportDocLinks === "string") {
           setSourceText(mergeWriterSourceInput(draft.sourceText, draft.supportDocLinks));
         }
         if (typeof draft.useWebResearch === "boolean") setUseWebResearch(draft.useWebResearch);
@@ -303,11 +299,8 @@ function WriterPageContent() {
     } finally { setBusy(""); }
   };
   const draftCharacterCount = lastContent.replace(/\s/g, "").length;
-  const paperTitle = useMemo(() => extractDraftTitle(lastContent), [lastContent]);
-  const formattedDraftContent = useMemo(
-    () => formatLongDraftForDisplay(paperTitle ? lastContent.replace(/^\s*[^\n]*\n?/, "").replace(/^\s+/, "") : lastContent),
-    [lastContent, paperTitle]
-  );
+  const longDraftDisplay = draftCharacterCount > LONG_DRAFT_DISPLAY_THRESHOLD;
+  const formattedDraftContent = useMemo(() => formatLongDraftForDisplay(lastContent), [lastContent]);
 
   useEffect(() => {
     setResearchOpen(false);
@@ -532,7 +525,20 @@ function WriterPageContent() {
   if (!loading && !historyLoading && !library?.accounts.length && !historyDrafts.length && !searchParams.get("draftId")) {
     return (
       <div className="page writer-page">
-        <h1 className="sr-only">对话写作</h1>
+        <header className="page-header">
+          <div className="page-title-group">
+            <span className="page-title-eyebrow">创作台</span>
+            <div className="page-title-row">
+              <span className="page-title-mark" aria-hidden="true">
+                <PenLine size={20} strokeWidth={2.1} />
+              </span>
+              <div className="page-title-copy">
+                <h1>对话写作</h1>
+                <p className="subtle">需要至少一个账号风格作为引用。</p>
+              </div>
+            </div>
+          </div>
+        </header>
         <EmptyState title="还没有可参考的风格" body="先采集一个账号并生成风格卡，再来这里生成文案。" action={{ href: "/library", label: "去采集账号" }} />
       </div>
     );
@@ -549,60 +555,42 @@ function WriterPageContent() {
         <section className="panel writer-main">
           <div className="writer-content-grid">
             <div className="writer-task" id="writer-task-panel">
-              <div className="writer-task-head">
-                <span className="writer-eyebrow">素材与风格</span>
+              <div className="section-title-row writer-setup-toolbar">
+                <h2>写作设定</h2>
                 <div className="writer-session-tools" role="group" aria-label="稿件管理">
-                  <button className="btn ghost compact" disabled={Boolean(busy) || sourceImporting} onClick={() => { setHistorySessionId(""); setHistoryOpen(true); }} type="button" aria-haspopup="dialog">
-                    <History aria-hidden="true" size={15} />历史
+                  <button className="btn ghost" disabled={Boolean(busy) || sourceImporting} onClick={() => { setHistorySessionId(""); setHistoryOpen(true); }} type="button" aria-haspopup="dialog">
+                    <History aria-hidden="true" size={16} />历史
                   </button>
-                  <button className="btn compact" disabled={Boolean(busy) || sourceImporting} onClick={handleStartNewTask} type="button">
-                    <Plus aria-hidden="true" size={15} />新建
+                  <button className="btn" disabled={Boolean(busy) || sourceImporting} onClick={handleStartNewTask} type="button">
+                    <Plus aria-hidden="true" size={16} />新建
                   </button>
                 </div>
               </div>
 
-              <section className="writer-style-stack" aria-label="参考风格" aria-busy={activeStyleLoading}>
-                <div className="writer-stack-label">
-                  参考风格 · {styleCards.length > 1 ? "每张卡独立成稿" : "按这张卡的写法成稿"}
-                </div>
-                {styleCards.map((card, index) => {
-                  const variant = generatedVariants.find((item) => item.title === card.title);
-                  const active = generatedVariants.length > 1 ? variant?.key === activeVariantKey : index === 0;
-                  return (
-                    <button
-                      type="button"
-                      key={card.key}
-                      className={`writer-style-tile ${active ? "active" : ""} ${card.error ? "has-error" : ""}`}
-                      style={{ "--i": index } as CSSProperties}
-                      onClick={() => variant && generatedVariants.length > 1 ? handleSelectGeneratedVariant(variant.key) : setStyleOpen(true)}
-                      title={variant && generatedVariants.length > 1 ? `切换到「${card.title}」这篇` : "查看风格卡全文"}
-                    >
-                      <span className="writer-style-tile-head">
-                        <strong>{card.title}</strong>
-                        <span className="writer-style-tile-letter">{String.fromCharCode(65 + index)}</span>
-                      </span>
-                      <span className="writer-style-tile-body">
-                        {card.loading ? "正在读取风格卡…" : card.error ? "风格卡读取失败，点开查看原因" : summarizeStyle(card.style) || card.subtitle}
-                      </span>
-                    </button>
-                  );
-                })}
-                <div className="writer-style-actions">
+              <div className="writer-refbar">
+                <div className="writer-reference-control">
+                  <span>参考风格</span>
                   <WriterReferencePicker
                     accounts={library?.accounts || EMPTY_ACCOUNTS}
                     disabled={loading}
                     onChange={setStyleRefs}
                     references={selectedStyleRefs}
-                    variant="add"
                   />
-                  {styleCards.length ? (
-                    <button className="btn ghost compact" type="button" onClick={() => setStyleOpen(true)} aria-busy={activeStyleLoading}>
-                      <Eye aria-hidden="true" size={15} />全文
-                    </button>
-                  ) : null}
                 </div>
-                {activeStyleError ? <p className="writer-inline-error" role="alert">有风格卡读取失败，点「全文」查看原因。</p> : null}
-              </section>
+
+                  <button
+                    aria-label={styleCards.length > 1 ? `查看${activeTitle}` : `查看${activeTitle || "当前参考"}风格卡`}
+                    className="btn ghost icon-only writer-style-trigger"
+                    aria-busy={activeStyleLoading}
+                    disabled={!styleCards.length}
+                    onClick={() => setStyleOpen(true)}
+                    title="查看风格卡"
+                    type="button"
+                  >
+                    <Eye aria-hidden="true" size={16} />
+                  </button>
+              </div>
+              {activeStyleError ? <p className="error" role="alert">风格卡读取失败，请点击眼睛查看详情。</p> : null}
 
               <WriterPromptField prompt={prompt} onChange={setPrompt} />
 
@@ -704,12 +692,9 @@ function WriterPageContent() {
                 </div>
               </section>
               {lastDraftId ? (
-                <details className="writer-preference-fold" key={lastDraftId}>
-                  <summary>长期写作偏好</summary>
-                  <section className="writer-preference-section" aria-label="长期写作偏好">
-                    <WriterPreference draftId={lastDraftId} disabled={Boolean(busy) || lastDraftBase?.targetType === "project"} onSaved={refresh} />
-                  </section>
-                </details>
+                <section className="writer-preference-section" key={lastDraftId} aria-label="长期写作偏好">
+                  <WriterPreference draftId={lastDraftId} disabled={Boolean(busy) || lastDraftBase?.targetType === "project"} onSaved={refresh} />
+                </section>
               ) : null}
 
               <div className="writer-actionbar">
@@ -756,46 +741,23 @@ function WriterPageContent() {
             </div>
 
             <div className="writer-result" id="writer-result">
-              <div className="writer-document-toolbar">
-                {generatedVariants.length > 1 ? (
-                  <div aria-label="并发生成的独立稿件" className="writer-variant-tabs" role="tablist">
-                    {generatedVariants.map((variant, index) => (
-                      <button
-                        aria-selected={variant.key === activeVariantKey}
-                        className={variant.key === activeVariantKey ? "active" : ""}
-                        key={variant.key}
-                        disabled={Boolean(busy)}
-                        onClick={() => handleSelectGeneratedVariant(variant.key)}
-                        role="tab"
-                        type="button"
-                      >
-                        <span className="writer-variant-letter" aria-hidden="true">{String.fromCharCode(65 + index)}</span>
-                        <span>{variant.title || `风格 ${index + 1}`}</span>
-                        <small>{variant.hasUnsavedChanges ? "未保存" : `V${variant.version?.revision || 1}`}</small>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="writer-variant-tabs is-single">
-                    <span className="writer-variant-tab active">
-                      <span className="writer-variant-letter" aria-hidden="true">A</span>
-                      <h2>{activeTitle || "稿件"}</h2>
-                      {lastDraftId ? <span className="writer-version-menu"><WriterActionMenu label="选择稿件版本" text={`V${lastDraftVersion?.revision || 1}`} icon={<ChevronDown size={12} aria-hidden="true" />} disabled={Boolean(busy)}>
-                        {currentVersions.map(version => <button key={version.id} type="button" aria-current={version.id === lastDraftId ? "true" : undefined} onClick={() => void selectVersion(version.id)}>
-                          <span className="writer-version-option"><strong>V{version.version?.revision || 1}{version.id === lastDraftId ? " · 当前" : ""}</strong><small>{version.version?.instruction || "初稿"}</small></span>
-                        </button>)}
-                      </WriterActionMenu></span> : <small>{busy === "generate" ? "生成中" : "待生成"}</small>}
-                      {busy === "generate" ? <span className="writer-tab-live" aria-hidden="true" /> : null}
-                    </span>
-                    {hasUnsavedChanges ? <span className="writer-unsaved">未保存的改动</span> : null}
-                  </div>
-                )}
+              <div className="section-title-row writer-document-toolbar">
+                <div className="writer-result-title">
+                  <h2>当前稿件</h2>
+                  {lastDraftId ? <WriterActionMenu label="选择稿件版本" text={`V${lastDraftVersion?.revision || 1}`} icon={<ChevronDown size={12} aria-hidden="true" />} disabled={Boolean(busy)}>
+                    {currentVersions.map(version => <button key={version.id} type="button" aria-current={version.id === lastDraftId ? "true" : undefined} onClick={() => void selectVersion(version.id)}>
+                      <span className="writer-version-option"><strong>V{version.version?.revision || 1}{version.id === lastDraftId ? " · 当前" : ""}</strong><small>{version.version?.instruction || "初稿"}</small></span>
+                    </button>)}
+                  </WriterActionMenu> : null}
+                  {lastContent ? <span className="writer-document-count" title="不含空白字符">{draftCharacterCount.toLocaleString()} 字</span> : null}
+                  {hasUnsavedChanges ? <span className="status-pill pending">未保存</span> : null}
+                </div>
                 <div className="writer-result-actions">
                   {undoHistorySwitch ? <button className="btn ghost compact" type="button" disabled={Boolean(busy)} onClick={undoHistorySwitch}>撤回切换</button> : null}
                   {lastContent ? (
                     <>
                     <div className="writer-document-tools" role="group" aria-label="稿件操作">
-                    {busy !== "generate" ? <button className="btn ghost compact" type="button" onClick={() => setDraftEditing((editing) => !editing)}>
+                    {longDraftDisplay ? <button className="btn ghost compact" type="button" onClick={() => setDraftEditing((editing) => !editing)}>
                       <PenLine aria-hidden="true" size={15} />
                       {draftEditing ? "查看排版" : "编辑原文"}
                     </button> : null}
@@ -830,56 +792,63 @@ function WriterPageContent() {
                   )}
                 </div>
               </div>
-              <div className={`writer-paper ${lastContent ? "has-content" : ""}`}>
-                {busy === "generate" ? (
-                  <div className="writer-generation-status" role="status" aria-live="polite">
-                    <span className="writer-activity-dot" aria-hidden="true" />
-                    <div>
-                      <strong>{generateStage || "正在生成文案"}</strong>
-                      <span>任务会在后台继续，可以留在当前页面等待。</span>
-                    </div>
+              {busy === "generate" ? (
+                <div className="writer-generation-status" role="status" aria-live="polite">
+                  <span className="writer-activity-dot" aria-hidden="true" />
+                  <div>
+                    <strong>{generateStage || "正在生成文案"}</strong>
+                    <span>任务会在后台继续，可以留在当前页面等待。</span>
                   </div>
-                ) : null}
-                {lastContent && paperTitle && !(draftEditing || busy === "generate") ? (
-                  <h1 className="writer-paper-title" key={`title:${activeVariantKey}:${lastDraftId}`}>{paperTitle}</h1>
-                ) : null}
-                {lastContent ? (
-                  <div className="writer-paper-meta" key={`meta:${activeVariantKey}:${lastDraftId}`}>
-                    <span>{draftCharacterCount.toLocaleString()} 字</span>
-                    <span>约 {Math.max(1, Math.round(draftCharacterCount / 260))} 分钟口播</span>
-                    {lastDraftVersion ? <span>V{lastDraftVersion.revision || 1}{lastDraftVersion.origin === "manual_edit" ? " · 手动编辑" : lastDraftVersion.instruction ? ` · ${lastDraftVersion.instruction}` : " · 首稿"}</span> : null}
-                    {busy === "generate" ? <span className="writer-paper-live">正在写</span> : null}
-                  </div>
-                ) : null}
-                {lastContent && (draftEditing || busy === "generate") ? (
-                  <textarea
-                    aria-label="当前稿件"
-                    className="result-box writer-draft-editor"
-                    onChange={(event) => {
-                      setDraftEditing(true);
-                      handleContentChange(event.target.value);
-                      setSelectedDraftText("");
-                      setRevisionScope("full");
-                    }}
-                    onKeyUp={(event) => handleDraftSelection(event.currentTarget)}
-                    onMouseUp={(event) => handleDraftSelection(event.currentTarget)}
-                    readOnly={busy === "generate"}
-                    ref={draftEditorRef}
-                    spellCheck={false}
-                    value={lastContent}
-                  />
-                ) : lastContent ? (
-                  <div aria-label="当前稿件（排版预览，双击编辑）" className="result-box writer-draft-preview" key={`paper:${activeVariantKey}:${lastDraftId}`} tabIndex={0} onDoubleClick={() => setDraftEditing(true)} title="双击进入编辑">
-                    {formattedDraftContent}
-                  </div>
-                ) : (
-                  <div className="writer-result-empty">
-                    <span aria-hidden="true"><Sparkles size={20} /></span>
-                    <strong>{busy === "generate" ? "正在准备第一版" : "暂无稿件"}</strong>
-                    <p>{busy === "generate" ? "正在整理素材、风格和写作要求。" : `${activeTitle || "当前参考"} · ${materialStatusLabel}`}</p>
-                  </div>
-                )}
-              </div>
+                </div>
+              ) : null}
+              {generatedVariants.length > 1 ? (
+                <div aria-label="并发生成的独立稿件" className="writer-variant-tabs" role="tablist">
+                  {generatedVariants.map((variant, index) => (
+                    <button
+                      aria-selected={variant.key === activeVariantKey}
+                      className={variant.key === activeVariantKey ? "active" : ""}
+                      key={variant.key}
+                      disabled={Boolean(busy)}
+                      onClick={() => handleSelectGeneratedVariant(variant.key)}
+                      role="tab"
+                      type="button"
+                    >
+                      <span>{variant.title || `风格 ${index + 1}`}</span>
+                      <small>
+                        {variant.hasUnsavedChanges ? "未保存" : `V${variant.version?.revision || 1}`}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {lastContent && (!longDraftDisplay || draftEditing || busy === "generate") ? (
+                <textarea
+                  aria-label="当前稿件"
+                  className="result-box writer-draft-editor"
+                  onChange={(event) => {
+                    setDraftEditing(true);
+                    handleContentChange(event.target.value);
+                    setSelectedDraftText("");
+                    setRevisionScope("full");
+                  }}
+                  onKeyUp={(event) => handleDraftSelection(event.currentTarget)}
+                  onMouseUp={(event) => handleDraftSelection(event.currentTarget)}
+                  readOnly={busy === "generate"}
+                  ref={draftEditorRef}
+                  spellCheck={false}
+                  value={lastContent}
+                />
+              ) : lastContent ? (
+                <div aria-label="当前稿件（排版预览）" className="result-box writer-draft-preview" tabIndex={0}>
+                  {formattedDraftContent}
+                </div>
+              ) : (
+                <div className="writer-result-empty">
+                  <span aria-hidden="true"><Sparkles size={20} /></span>
+                  <strong>{busy === "generate" ? "正在准备第一版" : "暂无稿件"}</strong>
+                  <p>{busy === "generate" ? "正在整理素材、风格和写作要求。" : `${activeTitle || "当前参考"} · ${materialStatusLabel}`}</p>
+                </div>
+              )}
               {lastContent ? (
                 <section className="writer-revision-composer" aria-labelledby="writer-revision-title">
                   <div className="writer-revision-head">
@@ -892,14 +861,6 @@ function WriterPageContent() {
                         <X aria-hidden="true" size={13} />
                       </button>
                     ) : null}
-                  </div>
-                  <div className="writer-quick-chips" role="group" aria-label="快捷修改">
-                    {QUICK_REVISIONS.map(([label, instruction]) => (
-                      <button className="writer-chip" disabled={Boolean(busy)} key={label} type="button" onClick={() => {
-                        setRevisionInstruction((current) => current.trim() ? `${current.trim()}\n${instruction}` : instruction);
-                        revisionInputRef.current?.focus();
-                      }}>{label}</button>
-                    ))}
                   </div>
                   <label className="writer-field">
                     <span className="sr-only">本轮修改要求</span>
@@ -936,6 +897,17 @@ function WriterPageContent() {
                         <option value="recalibrate">重新校准风格</option>
                       </WorkbenchSelect>
                     </label>
+                    <WriterActionMenu label="快捷修改要求" icon={<Sparkles size={16} aria-hidden="true" />}>
+                      {[
+                        ["精简篇幅", "精简篇幅，保留核心信息和原有表达风格。"],
+                        ["加强开头", "加强开头的吸引力，其余内容尽量保持不变。"]
+                      ].map(([label, instruction]) => (
+                        <button className="btn small ghost" disabled={Boolean(busy)} key={label} type="button" onClick={() => {
+                          setRevisionInstruction((current) => current.trim() ? `${current.trim()}\n${instruction}` : instruction);
+                          revisionInputRef.current?.focus();
+                        }}>{label}</button>
+                      ))}
+                    </WriterActionMenu>
                     </div>
                     <button
                       aria-busy={busy === "generate"}
@@ -955,42 +927,6 @@ function WriterPageContent() {
                 </section>
               ) : null}
             </div>
-
-            <aside className="writer-versions" aria-label="版本链">
-              <div className="writer-versions-title">版本链</div>
-              {currentVersions.length ? (
-                <ol className="writer-version-chain">
-                  {currentVersions.map((version, index) => {
-                    const current = version.id === lastDraftId;
-                    const origin = version.version?.origin;
-                    return (
-                      <li key={version.id} style={{ "--i": index } as CSSProperties}>
-                        <button
-                          type="button"
-                          className={`writer-version-node ${current ? "current" : ""}`}
-                          aria-current={current ? "true" : undefined}
-                          disabled={Boolean(busy) || current}
-                          onClick={() => void selectVersion(version.id)}
-                        >
-                          <span className="writer-version-dot" aria-hidden="true" />
-                          <span className="writer-version-copy">
-                            <strong>V{version.version?.revision || 1} {origin === "manual_edit" ? "手动编辑" : version.version?.instruction || "首稿"}</strong>
-                            <small>{formatVersionTime(version.createdAt)}</small>
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ol>
-              ) : (
-                <p className="writer-versions-empty">{lastContent ? "保存后，这里按时间记录每一版。" : "生成第一稿后，这里记录每次续改和手动编辑。"}</p>
-              )}
-              {displayResearch ? (
-                <button className="writer-versions-research" type="button" onClick={() => setResearchOpen(true)}>
-                  <BookOpenText size={14} aria-hidden="true" />本稿参考资料
-                </button>
-              ) : null}
-            </aside>
           </div>
         </section>
 
@@ -1049,40 +985,6 @@ function WriterPageContent() {
   );
 }
 
-const QUICK_REVISIONS = [
-  ["更口语", "整体改得更口语，像对着镜头说话，信息不变。"],
-  ["开头更狠", "加强开头的吸引力，第一句就抛出结论或冲突，其余内容尽量保持不变。"],
-  ["精简篇幅", "精简篇幅，保留核心信息和原有表达风格。"],
-  ["压到 60 秒", "压缩到 60 秒口播以内（约 260 字），保留最关键的信息。"],
-  ["结尾加互动", "结尾加一句引导评论的互动提问。"]
-] as const;
-
-const versionTimeFormatter = new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-
-function formatVersionTime(value: string) {
-  const time = Date.parse(value);
-  if (!Number.isFinite(time)) return "";
-  const minutes = Math.round((Date.now() - time) / 60_000);
-  if (minutes < 1) return "刚刚";
-  if (minutes < 60) return `${minutes} 分钟前`;
-  if (minutes < 24 * 60) return `${Math.round(minutes / 60)} 小时前`;
-  return versionTimeFormatter.format(time);
-}
-
-/** 稿件第一行是 Markdown 标题时，稿纸上把它排成大标题。 */
-function extractDraftTitle(content: string) {
-  const firstLine = content.trimStart().split("\n", 1)[0]?.trim() || "";
-  const match = firstLine.match(/^#{1,3}\s+(.+)$/) || firstLine.match(/^标题[:：]\s*(.+)$/);
-  return match ? match[1].trim() : "";
-}
-
-/** 风格卡正文太长，卡片上只放第一句有内容的描述。 */
-function summarizeStyle(style?: string) {
-  if (!style) return "";
-  const line = style.split(/\n+/).map((item) => item.replace(/^[#>*\-\d.\s]+/, "").trim()).find((item) => item.length > 6) || "";
-  return line.length > 46 ? `${line.slice(0, 46)}…` : line;
-}
-
 function ResearchReferenceBody({ id, text }: { id?: string; text: string }) {
   const parts = text.split(/(https?:\/\/[^\s<>"'）)]+)/g);
   return (
@@ -1112,7 +1014,20 @@ function createWriterReferenceParams(references: WriteStyleReferenceInput[], mod
 function WriterFallback() {
   return (
     <div className="page writer-page">
-      <h1 className="sr-only">对话写作</h1>
+      <header className="page-header">
+        <div className="page-title-group">
+          <span className="page-title-eyebrow">创作台</span>
+          <div className="page-title-row">
+            <span className="page-title-mark" aria-hidden="true">
+              <PenLine size={20} strokeWidth={2.1} />
+            </span>
+            <div className="page-title-copy">
+              <h1>对话写作</h1>
+              <p className="subtle">正在读取写作台引用和历史记录。</p>
+            </div>
+          </div>
+        </div>
+      </header>
       <section className="panel">
         <div className="panel-inner">
           <p className="subtle">正在准备写作台…</p>

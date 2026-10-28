@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { Button, Dialog, DialogTrigger } from "react-aria-components";
 import { WorkbenchSelectPopover } from "@/components/WorkbenchSelect";
-import { Check, ChevronDown, Plus } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { formatPlatform } from "@/components/Formatters";
 import { writeStyleReferenceKey } from "@/lib/write-references";
 import type { AccountListItem, WriteStyleReferenceInput } from "@/lib/types";
@@ -13,8 +13,6 @@ type WriterReferencePickerProps = {
   disabled?: boolean;
   onChange: (references: WriteStyleReferenceInput[]) => void;
   references: WriteStyleReferenceInput[];
-  /** add：触发器显示为“加风格卡”，已选风格由外部卡片展示。 */
-  variant?: "summary" | "add";
 };
 
 type ReferenceOption = {
@@ -28,7 +26,6 @@ type ReferenceOption = {
 const MAX_CONCURRENT_STYLES = 8;
 
 export function WriterReferencePicker({
-  variant = "summary",
   accounts,
   disabled,
   onChange,
@@ -95,28 +92,16 @@ export function WriterReferencePicker({
   return (
     <div className="writer-reference-picker">
       <DialogTrigger>
-        {variant === "add" ? (
-          <Button
-            aria-label={`调整参考风格，已选 ${selectedOptions.length} 个`}
-            className="writer-reference-picker-trigger is-add"
-            isDisabled={disabled}
-            type="button"
-          >
-            <Plus aria-hidden="true" size={15} />
-            <span>{selectedOptions.length ? "加 / 换风格卡" : "选择参考风格"}</span>
-          </Button>
-        ) : (
-          <Button
-            aria-label="选择参考风格"
-            className="writer-reference-picker-trigger"
-            isDisabled={disabled}
-            type="button"
-          >
-            <span>{summary}</span>
-            {selectedOptions.length > 1 ? <small>{selectedOptions.length}</small> : null}
-            <ChevronDown aria-hidden="true" size={15} />
-          </Button>
-        )}
+        <Button
+          aria-label="选择参考风格"
+          className="writer-reference-picker-trigger"
+          isDisabled={disabled}
+          type="button"
+        >
+          <span>{summary}</span>
+          {selectedOptions.length > 1 ? <small>{selectedOptions.length}</small> : null}
+          <ChevronDown aria-hidden="true" size={15} />
+        </Button>
         <WorkbenchSelectPopover placement="bottom start" offset={6}>
           <Dialog aria-label="选择参考风格" className="writer-reference-menu">
             <div aria-label="账号风格" aria-multiselectable="true" role="listbox">

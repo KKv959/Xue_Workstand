@@ -1,203 +1,233 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState, type CSSProperties } from "react";
-import { AlertTriangle, ArrowRight, Check, ChevronRight, FileText, Search } from "lucide-react";
-import { OPEN_COMMAND_PALETTE_EVENT } from "@/components/CommandPalette";
+import {
+  AlertTriangle,
+  ArrowRight,
+  BookOpen,
+  CheckCircle2,
+  FileText,
+  Flame,
+  Loader2,
+  PenLine,
+  RefreshCw,
+  Video
+} from "lucide-react";
 import { useLibrary } from "@/components/LibraryProvider";
 import { useRemoteStatus } from "@/components/RemoteStatusProvider";
 import { useOptionalTasks } from "@/components/TaskProvider";
-import { getCachedDouyinHotlist, getDouyinHotlist } from "@/lib/client";
 import { buildWriterDraftHref } from "@/lib/draft-links";
-import type { DouyinHotlistResponse, JobRecord } from "@/lib/types";
+import type { JobRecord } from "@/lib/types";
 
-const HOTLIST_WINDOW = "3d";
-const numberFormatter = new Intl.NumberFormat("zh-CN", { notation: "compact", maximumFractionDigits: 1 });
-
-/** 手机“今天”：一屏回答后台在不在、任务跑到哪、现在什么在火。 */
 export default function MobileHomePage() {
   const { library, loading: libraryLoading, error: libraryError, refresh: refreshLibrary } = useLibrary();
   const tasks = useOptionalTasks();
   const remote = useRemoteStatus();
-  const hotlist = useTopHotlist();
-  const activeJobs = tasks?.activeJobs ?? [];
-  const failedJobs = tasks?.recentJobs.filter((job) => job.status === "failed" || job.status === "interrupted") ?? [];
+  const primaryJob = tasks?.activeJobs[0] || null;
+  const failedJobs = tasks?.recentJobs.filter((job) => job.status === "failed" || job.status === "interrupted") || [];
 
   return (
-    <div className="mobile-home today-page page">
-      <header className="today-head">
-        <div>
-          <button
-            type="button"
-            className={`today-status ${remote.connection}`}
-            onClick={() => void remote.refresh({ fresh: true })}
-            aria-label="重新检查后台状态"
-          >
-            <span aria-hidden="true" />
-            {connectionLabel(remote.connection)} · {formatCheckedAt(remote.status?.checkedAt)}
-          </button>
-          <h1>今天</h1>
+    <div className="mobile-home page">
+      <section className={`mobile-connection-card ${remote.connection}`} aria-live="polite">
+        <div className="mobile-connection-copy">
+          <span className="mobile-eyebrow">私人远程后台</span>
+          <h1>{connectionTitle(remote.connection)}</h1>
+          <p>{connectionMessage(remote)}</p>
         </div>
         <button
+          aria-busy={remote.connection === "checking"}
+          aria-label="重新检查后台状态"
+          className="btn icon-only"
+          disabled={remote.connection === "checking"}
+          onClick={() => void remote.refresh({ fresh: true })}
           type="button"
-          className="today-search"
-          aria-label="搜索页面和账号"
-          onClick={() => window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE_EVENT))}
         >
-          <Search size={19} aria-hidden="true" />
+          <RefreshCw aria-hidden="true" size={18} />
         </button>
-      </header>
+      </section>
 
-      <TaskCard jobs={activeJobs} onCancel={tasks?.cancelTask} />
-
-      <section className="today-section">
-        <div className="today-section-head">
-          <h2>热榜前 5</h2>
-          <Link href="/douyin-hotlist">全部 {hotlist.total || ""} <ChevronRight size={15} aria-hidden="true" /></Link>
+      <section className="mobile-section">
+        <div className="mobile-section-heading">
+          <div>
+            <span className="mobile-eyebrow">当前执行</span>
+            <h2>任务进度</h2>
+          </div>
+          <span className={`status-pill ${primaryJob ? "pending" : "completed"}`}>
+            {primaryJob ? `${tasks?.activeJobs.length || 0} 个进行中` : "空闲"}
+          </span>
         </div>
-        <div className="today-card today-hotlist">
-          {hotlist.items.length ? hotlist.items.map((item, index) => (
-            <Link
-              key={`${item.account.id}:${item.video.id}`}
-              className="today-hot-row"
-              href={`/douyin-hotlist`}
-              style={{ "--i": index } as CSSProperties}
-            >
-              <span className={`today-hot-rank ${index === 0 ? "is-top" : ""}`}>{index + 1}</span>
-              <span className="today-hot-cover">
-                {item.video.coverUrl ? <Image alt="" src={item.video.coverUrl} width={120} height={76} unoptimized referrerPolicy="no-referrer" /> : null}
-              </span>
-              <span className="today-hot-copy">
-                <strong>{item.video.title}</strong>
-                <small>{numberFormatter.format(item.heatScore)} 热度{item.surge ? <em>飙升</em> : null}</small>
-              </span>
-            </Link>
-          )) : (
-            <p className="today-empty">{hotlist.error ? hotlist.error : hotlist.loading ? "正在读取热榜…" : "还没有热榜数据，去热榜页添加账号并抓取。"}</p>
-          )}
+        {primaryJob ? <ActiveJobCard job={primaryJob} onCancel={tasks?.cancelTask} /> : (
+          <div className="mobile-empty-card">
+            <CheckCircle2 aria-hidden="true" size={22} />
+            <div>
+              <strong>没有正在执行的任务</strong>
+              <span>采集、转写和写作任务会继续在 MacBook 后台运行。</span>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="mobile-section">
+        <div className="mobile-section-heading">
+          <div>
+            <span className="mobile-eyebrow">快速开始</span>
+            <h2>常用操作</h2>
+          </div>
+        </div>
+        <div className="mobile-quick-grid">
+          <QuickAction href="/douyin-hotlist" icon={Flame} title="查看热榜" detail="发现正在起量的视频" />
+          <QuickAction href="/library" icon={BookOpen} title="账号与转写" detail="采集、转写和编辑文稿" />
+          <QuickAction href="/writer" icon={PenLine} title="新建写作" detail="结合风格与素材生成文案" />
+          <QuickAction href="/tools" icon={Video} title="链接工具" detail="处理单条视频链接" />
         </div>
       </section>
 
-      {failedJobs.length ? (
-        <section className="today-section">
-          <div className="today-section-head">
-            <h2>需要处理</h2>
+      <section className="mobile-section">
+        <div className="mobile-section-heading">
+          <div>
+            <span className="mobile-eyebrow">最近工作</span>
+            <h2>草稿</h2>
           </div>
-          <div className="today-card">
-            {failedJobs.slice(0, 3).map((job) => (
-              <Link className="today-row is-danger" href={job.href || "/mobile"} key={job.id}>
-                <AlertTriangle aria-hidden="true" size={17} />
-                <span className="today-row-copy">
-                  <strong>{job.title}</strong>
-                  <small>{job.error || job.message || "任务没有完成"}</small>
+          <Link className="mobile-text-link" href="/writer">
+            全部 <ArrowRight aria-hidden="true" size={15} />
+          </Link>
+        </div>
+        {libraryLoading ? (
+          <div className="mobile-empty-card">
+            <Loader2 aria-hidden="true" className="spin" size={22} />
+            <span>正在读取草稿…</span>
+          </div>
+        ) : libraryError ? (
+          <div className="mobile-alert-card">
+            <AlertTriangle aria-hidden="true" size={20} />
+            <div>
+              <strong>草稿读取失败</strong>
+              <span>{libraryError}</span>
+            </div>
+            <button className="btn compact" onClick={() => void refreshLibrary({ force: true })} type="button">
+              重试
+            </button>
+          </div>
+        ) : library?.recentDrafts.length ? (
+          <div className="mobile-list">
+            {library.recentDrafts.slice(0, 4).map((draft) => (
+              <Link className="mobile-list-row" href={buildWriterDraftHref(draft)} key={draft.id}>
+                <span className="mobile-list-icon"><FileText aria-hidden="true" size={18} /></span>
+                <span className="mobile-list-copy">
+                  <strong>{draft.title || "未命名草稿"}</strong>
+                  <small>{draft.targetType === "project" ? draft.projectName : draft.accountName} · {relativeTime(draft.updatedAt)}</small>
                 </span>
-                <ArrowRight aria-hidden="true" size={16} />
+                <ArrowRight aria-hidden="true" size={17} />
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="mobile-empty-card">
+            <FileText aria-hidden="true" size={22} />
+            <div>
+              <strong>还没有草稿</strong>
+              <span>从写作页生成第一版内容。</span>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {failedJobs.length ? (
+        <section className="mobile-section">
+          <div className="mobile-section-heading">
+            <div>
+              <span className="mobile-eyebrow">需要处理</span>
+              <h2>失败和中断</h2>
+            </div>
+            <span className="status-pill failed">{failedJobs.length}</span>
+          </div>
+          <div className="mobile-list">
+            {failedJobs.slice(0, 3).map((job) => (
+              <Link className="mobile-list-row danger" href={job.href || "/mobile"} key={job.id}>
+                <span className="mobile-list-icon"><AlertTriangle aria-hidden="true" size={18} /></span>
+                <span className="mobile-list-copy">
+                  <strong>{job.title}</strong>
+                  <small>{job.message || job.error || "任务没有完成"}</small>
+                </span>
+                <ArrowRight aria-hidden="true" size={17} />
               </Link>
             ))}
           </div>
         </section>
       ) : null}
-
-      <section className="today-section">
-        <div className="today-section-head">
-          <h2>最近草稿</h2>
-          <Link href="/writer">写一稿 <ChevronRight size={15} aria-hidden="true" /></Link>
-        </div>
-        <div className="today-card">
-          {libraryLoading ? (
-            <p className="today-empty">正在读取草稿…</p>
-          ) : libraryError ? (
-            <div className="today-row is-danger">
-              <AlertTriangle aria-hidden="true" size={17} />
-              <span className="today-row-copy"><strong>草稿读取失败</strong><small>{libraryError}</small></span>
-              <button className="btn compact" onClick={() => void refreshLibrary({ force: true })} type="button">重试</button>
-            </div>
-          ) : library?.recentDrafts.length ? library.recentDrafts.slice(0, 3).map((draft) => (
-            <Link className="today-row" href={buildWriterDraftHref(draft)} key={draft.id}>
-              <FileText aria-hidden="true" size={17} />
-              <span className="today-row-copy">
-                <strong>{draft.title || "未命名草稿"}</strong>
-                <small>{draft.targetType === "project" ? draft.projectName : draft.accountName} · {relativeTime(draft.updatedAt)}</small>
-              </span>
-              <ArrowRight aria-hidden="true" size={16} />
-            </Link>
-          )) : (
-            <p className="today-empty">还没有草稿，从热榜挑一条“用它写”。</p>
-          )}
-        </div>
-      </section>
     </div>
   );
 }
 
-function TaskCard({ jobs, onCancel }: { jobs: JobRecord[]; onCancel?: (jobId: string) => Promise<JobRecord> }) {
-  const primary = jobs[0];
-  if (!primary) {
-    return (
-      <section className="today-task is-idle" aria-live="polite">
-        <span className="today-task-icon" aria-hidden="true"><Check size={16} strokeWidth={2.6} /></span>
-        <div>
-          <strong>后台空闲</strong>
-          <small>采集、转写和写作会在 Mac 上继续跑，这里实时显示。</small>
-        </div>
-      </section>
-    );
-  }
-  const progress = Math.max(0, Math.min(100, Math.round(primary.progress)));
+function ActiveJobCard({
+  job,
+  onCancel
+}: {
+  job: JobRecord;
+  onCancel?: (jobId: string) => Promise<JobRecord>;
+}) {
   return (
-    <section className="today-task" aria-live="polite">
-      <div className="today-task-head">
-        <strong>后台任务 {jobs.length} 个在跑</strong>
-        {onCancel ? <button type="button" onClick={() => void onCancel(primary.id)}>停止</button> : null}
-      </div>
-      <div className="today-task-line">
-        <span>{primary.title}</span>
-        <span>{primary.status === "queued" ? "排队中" : `${progress}%`}</span>
-      </div>
-      <span className="today-task-rail" aria-label={`任务进度 ${progress}%`}>
-        <span style={{ transform: `scaleX(${progress / 100})` }} />
-      </span>
-      <small className="today-task-detail">{primary.message}</small>
-      {jobs.slice(1, 3).map((job) => (
-        <div className="today-task-line is-secondary" key={job.id}>
-          <span>{job.title}</span>
-          <span>{job.status === "queued" ? "排队中" : `${Math.round(job.progress)}%`}</span>
+    <article className="mobile-active-job">
+      <div className="mobile-active-job-top">
+        <span className="mobile-list-icon active"><Loader2 aria-hidden="true" size={18} /></span>
+        <div className="mobile-list-copy">
+          <strong>{job.title}</strong>
+          <small>{job.message}</small>
         </div>
-      ))}
-    </section>
+        <strong className="mobile-job-percent">{Math.max(0, Math.min(100, job.progress))}%</strong>
+      </div>
+      <span className="mobile-progress" aria-label={`任务进度 ${job.progress}%`}>
+        <span style={{ width: `${Math.max(0, Math.min(100, job.progress))}%` }} />
+      </span>
+      {onCancel ? (
+        <button className="btn compact" onClick={() => void onCancel(job.id)} type="button">
+          停止任务
+        </button>
+      ) : null}
+    </article>
   );
 }
 
-/** 先用热榜页留下的缓存秒开，再后台补一次。 */
-function useTopHotlist() {
-  const [snapshot, setSnapshot] = useState<DouyinHotlistResponse | null>(() => getCachedDouyinHotlist({ window: HOTLIST_WINDOW }));
-  const [loading, setLoading] = useState(!snapshot);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let ignore = false;
-    getDouyinHotlist({ window: HOTLIST_WINDOW })
-      .then((next) => { if (!ignore) { setSnapshot(next); setError(""); } })
-      .catch((reason) => { if (!ignore) setError(reason instanceof Error ? reason.message : "读取热榜失败，请稍后重试"); })
-      .finally(() => { if (!ignore) setLoading(false); });
-    return () => { ignore = true; };
-  }, []);
-
-  const items = [...(snapshot?.items ?? [])].sort((left, right) => right.heatScore - left.heatScore).slice(0, 5);
-  return { items, total: snapshot?.items.length ?? 0, loading, error };
+function QuickAction({
+  detail,
+  href,
+  icon: Icon,
+  title
+}: {
+  detail: string;
+  href: string;
+  icon: typeof Flame;
+  title: string;
+}) {
+  return (
+    <Link className="mobile-quick-card" href={href}>
+      <span className="mobile-quick-icon"><Icon aria-hidden="true" size={21} /></span>
+      <strong>{title}</strong>
+      <small>{detail}</small>
+      <ArrowRight aria-hidden="true" className="mobile-quick-arrow" size={16} />
+    </Link>
+  );
 }
 
-function connectionLabel(connection: ReturnType<typeof useRemoteStatus>["connection"]) {
-  if (connection === "online") return "Mac 在线";
-  if (connection === "degraded") return "部分可用";
-  if (connection === "offline") return "Mac 离线";
-  return "正在连接";
+function connectionTitle(connection: ReturnType<typeof useRemoteStatus>["connection"]) {
+  if (connection === "online") return "后台在线";
+  if (connection === "degraded") return "后台部分可用";
+  if (connection === "offline") return "后台离线";
+  return "正在连接后台";
+}
+
+function connectionMessage(remote: ReturnType<typeof useRemoteStatus>) {
+  if (remote.connection === "online") {
+    return `版本 ${remote.status?.app.version || "—"} · ${formatCheckedAt(remote.status?.checkedAt)}`;
+  }
+  if (remote.connection === "degraded") return "工作台可访问，部分采集或生成能力需要处理。";
+  if (remote.connection === "offline") return remote.error;
+  return "正在确认 MacBook 和本地服务状态。";
 }
 
 function formatCheckedAt(value?: string) {
-  if (!value) return "刚刚";
-  return new Date(value).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  if (!value) return "刚刚检查";
+  return `检查于 ${new Date(value).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 function relativeTime(value: string) {

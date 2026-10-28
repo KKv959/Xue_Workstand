@@ -6,9 +6,8 @@ import type { MouseEvent } from "react";
 
 const ROUTE_BUSY_DELAY_MS = 200;
 const ROUTE_INTENT_DELAY_MS = 120;
-// 正式服务的页面已预构建，按 Next 默认在可视区预取，点击导航无需再等隧道往返；
-// 开发服务仍关闭自动预取，避免首次访问触发全站编译。
-export const navPrefetch = process.env.NODE_ENV === "production" ? undefined : false;
+// 只在明确导航意图时预取，避免可视区内所有模块抢占首屏带宽。
+export const navPrefetch = false;
 
 /** 导航意图：悬停预热目标页，点击后 200ms 仍未完成才显示进度条。 */
 export function useNavIntent(activeHref?: string) {
@@ -93,6 +92,7 @@ export function useNavIntent(activeHref?: string) {
   /** 绑定到导航链接上的事件集合。 */
   const linkProps = useCallback((href: string) => ({
     onFocus: () => prewarmRoute(href),
+    onTouchStart: () => prewarmRoute(href),
     onPointerEnter: () => prewarmRoute(href),
     onPointerLeave: cancelPrewarm,
     onBlur: cancelPrewarm,

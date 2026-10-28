@@ -20,7 +20,9 @@ export function getVideoOpenUrl(video: VideoListItem | null) {
 
 export function makePreview(text: string, markdown = false) {
   const readable = markdown ? text
+    .replace(/^(?:#{1,6}\s+)?风格卡[^\n]*(?:\n|$)/, "")
     .replace(/^# [^\n]*(?:\n|$)/, "")
+    .replace(/\[\[\d+\]\]/g, "")
     .replace(/^\s{0,3}#{1,6}\s+/gm, "")
     .replace(/^\s*[-*+]\s+/gm, "")
     .replace(/\*\*([^*]+)\*\*/g, "$1")

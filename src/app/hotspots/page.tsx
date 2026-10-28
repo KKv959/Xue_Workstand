@@ -18,8 +18,8 @@ function RadarWorkspace() {
   const params = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  // 默认进入资讯发现，保留既有 topics/news 报告深链接。
-  const analysis = params.get("view") === "topics" || params.get("view") === "news";
+  // 保留既有 topics/news 深链接；无参数时进入 TrendRadar 报告。
+  const analysis = params.get("view") !== "discover";
   function select(view: "discover" | "topics") {
     const next = new URLSearchParams(params.toString());
     next.set("view", view);

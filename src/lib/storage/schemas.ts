@@ -554,3 +554,8 @@ export const commentPipelineCheckpointSchema = z.object({
     }
   });
 });
+
+export const mustFireCacheSchema = z.object({
+  schemaVersion: z.literal(1), fetchedAt: z.string().datetime(),
+  rows: z.array(z.object({ account: z.string().min(1), project: z.string().min(1), url: z.string(), amount: z.number().finite().nonnegative().max(100000000) }))
+});

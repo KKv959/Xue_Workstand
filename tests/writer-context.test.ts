@@ -149,6 +149,29 @@ test("原作直接归纳成卡，写稿只拿卡片与本次素材", async () =>
   });
 });
 
+test("风格学习完整读取全部转写，保留长原文与长卡，低热度原文变化也使缓存失效", async () => {
+  await fixture(async ({ account, requests }) => {
+    const originals = Array.from({ length: 12 }, (_, index) => ({
+      id: `original-${index}`,
+      text: `第${index}篇的观察角度。` + (index === 11 ? "铺垫中的关键细节。".repeat(800) : "接住上一句的话头。") + `第${index}篇的完整结尾。`
+    }));
+    await saveVideos(account, originals.map((item, index) => video(account, item.id, `作品${index}`, 1000 - index)));
+    for (const item of originals) await saveTranscript({ platform: account.platform, accountId: account.id, videoId: item.id, text: item.text, source: "manual" });
+    const context = await prepareAccountStyleContext(account.platform, account.id);
+    assert.equal(context.sampleVideoIds.length, originals.length, "不能只读前 8 篇再抽 3 篇");
+    for (const item of originals) assert.ok(context.messages[1].content.includes(item.text), `${item.id} 应完整输入，不截取头中尾`);
+    const detailedStyle = "# 具体写法\n" + "从具体细节建立观众预期，再通过后续行动改变理解。\n".repeat(300);
+    await completePreparedAccountStyle(context, { text: detailedStyle, model: "fixture", ok: true, fallback: false });
+    assert.equal((await readStyle(account.platform, account.id)).trim(), detailedStyle.trim(), "详细风格卡不截短");
+    const writing = await prepareWriteCopyContext({ platform: account.platform, accountId: account.id, mode: "topic", prompt: "写新素材" });
+    assert.ok(writing.messages[1].content.includes(JSON.stringify(detailedStyle.trim()).slice(1, -1)), "详细风格卡完整传给写作模型");
+    assert.ok((await prepareAccountStyleContext(account.platform, account.id)).cachedStyle);
+    await saveTranscript({ platform: account.platform, accountId: account.id, videoId: originals[11].id, text: originals[11].text + "新的收尾。", source: "manual" });
+    assert.equal((await prepareAccountStyleContext(account.platform, account.id)).cachedStyle, undefined);
+    assert.equal(requests.length, 0, "学习准备不增加模型调用");
+  });
+});
+
 test("风格快照保存与续改保持原风格，写稿不额外读取原作", async () => {
   await fixture(async ({ account, requests, setReply, root }) => {
     const samples = [

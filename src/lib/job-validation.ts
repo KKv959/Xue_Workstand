@@ -166,8 +166,10 @@ const grossMarginRefreshSchema = z.object({
   href: z.string().optional(),
   input: z.object({
     recordIds: z.array(z.string().trim().min(1)).optional(),
-    syncProjects: z.boolean().optional()
+    syncProjects: z.boolean().optional(),
+    syncMustFire: z.boolean().optional()
   }).superRefine((input, ctx) => {
+    if (input.syncMustFire && (input.syncProjects || input.recordIds)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "必火同步不能混入其他刷新" });
     if (input.syncProjects && input.recordIds) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "同步项目报价不能同时刷新监控记录" });
   })
 });

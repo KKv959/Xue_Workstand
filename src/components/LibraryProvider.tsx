@@ -1,7 +1,9 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { getLibraryOverview } from "@/lib/client";
+import { getLibraryOverview, getLibraryBootstrap } from "@/lib/client";
+import { rememberAccountDetail } from "@/lib/detail-cache";
+import { rememberTranscript } from "@/lib/transcript-cache";
 import type { LibraryOverview, LibraryOverviewResponse } from "@/lib/types";
 
 type LibraryContextValue = {
@@ -24,10 +26,12 @@ export function invalidateLibraryOverviewCache() {
 
 export function LibraryProvider({
   children,
-  enabled = true
+  enabled = true,
+  bootstrap = false
 }: {
   children: React.ReactNode;
   enabled?: boolean;
+  bootstrap?: boolean;
 }) {
   const [library, setLibrary] = useState<LibraryOverview | null>(() =>
     libraryOverviewCache ? buildLibraryOverview(libraryOverviewCache) : null
@@ -44,7 +48,7 @@ export function LibraryProvider({
     if (!hasLibraryRef.current) setLoading(true);
     setError("");
     try {
-      const overview = await loadLibraryOverview(options.force ?? true);
+      const overview = await loadLibraryOverview(options.force ?? true, bootstrap);
       if (refreshSeq !== refreshSeqRef.current) return;
       hasLibraryRef.current = true;
       setLibrary(buildLibraryOverview(overview));
@@ -54,7 +58,7 @@ export function LibraryProvider({
     } finally {
       if (refreshSeq === refreshSeqRef.current) setLoading(false);
     }
-  }, [enabled]);
+  }, [enabled, bootstrap]);
 
   useEffect(() => {
     if (!enabled) {
@@ -90,13 +94,25 @@ function buildLibraryOverview(library: LibraryOverviewResponse): LibraryOverview
   };
 }
 
-function loadLibraryOverview(force: boolean) {
+function loadLibraryOverview(force: boolean, bootstrap: boolean) {
   if (libraryOverviewRequest) return libraryOverviewRequest;
   if (!force && libraryOverviewCache) return Promise.resolve(libraryOverviewCache);
 
   const requestSeq = libraryOverviewRequestSeq + 1;
   libraryOverviewRequestSeq = requestSeq;
-  const request = getLibraryOverview()
+  const load = async () => {
+    if (!bootstrap || force) return getLibraryOverview();
+    const result = await getLibraryBootstrap(window.location.search.slice(1));
+    if (requestSeq === libraryOverviewRequestSeq && result.account) {
+      const version = result.overview.accounts.find(account => account.id === result.account!.id)?.updatedAt || result.account.updatedAt;
+      rememberAccountDetail(result.account, version);
+      if (result.transcript) rememberTranscript({ platform: result.account.platform, accountId: result.account.id, videoId: result.transcript.videoId }, {
+        transcript: result.transcript.preview, revision: result.transcript.revision, versions: [], complete: false, error: result.transcript.error
+      });
+    }
+    return result.overview;
+  };
+  const request = load()
     .then((library) => {
       if (requestSeq === libraryOverviewRequestSeq) libraryOverviewCache = library;
       return library;

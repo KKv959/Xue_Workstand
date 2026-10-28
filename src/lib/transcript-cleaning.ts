@@ -21,9 +21,13 @@ export async function cleanTranscriptText(input: {
 }): Promise<TranscriptCleanResult> {
   throwIfAborted(input.signal);
   const localCleaned = finalizeTranscriptText(input.text);
-  assertTranscriptLanguage(input.title, localCleaned);
   if (!localCleaned) {
-    throw new Error("没有识别到可用的转写正文，请检查原视频是否有清晰的人声或可用字幕。");
+    return {
+      text: "",
+      usedModel: "local-cleaner",
+      fallback: true,
+      fallbackReason: "原始转写结果为空，无法清洗。"
+    };
   }
 
   const shouldUseModel = input.useModel ?? process.env.TRANSCRIPT_CLEAN_USE_MODEL === "true";
@@ -97,9 +101,6 @@ export async function cleanTranscriptText(input: {
       };
     }
 
-    // 原始识别已通过校验；模型改变语言时走现有清洗降级，保留原文。
-    assertTranscriptLanguage(input.title, cleanedText);
-
     return {
       text: cleanedText,
       usedModel: [...usedModels].join(", "),
@@ -115,15 +116,6 @@ export async function cleanTranscriptText(input: {
       fallbackReason: error instanceof Error ? `清洗模型失败：${error.message}` : "清洗模型失败，已回退到本地规则清洗。"
     };
   }
-}
-
-function assertTranscriptLanguage(title: string | undefined, text: string) {
-  // 标题只能提示预期语言，不能证明音轨语言。仅拦截明确的全拉丁文长句，
-  // 不按比例误杀中文里的产品名，也不把外语、歌词或误识别擅自翻译成中文。
-  if (!/\p{Script=Han}/u.test(title || "") || /\p{Script=Han}/u.test(text)) return;
-  const words = text.match(/\p{Script=Latin}+(?:['’]\p{Script=Latin}+)*/gu) || [];
-  if (words.length < 4) return;
-  throw new Error("转写结果语言待核实：视频标题含中文，但识别正文只有外文，未作为有效中文文稿保存。可能是外语原声、背景歌曲或语音误识别；请先播放原视频确认。若只有配乐或画面文字，音频转写无法取得中文口播稿，请提供字幕或手动录入正文。");
 }
 
 function throwIfAborted(signal?: AbortSignal) {

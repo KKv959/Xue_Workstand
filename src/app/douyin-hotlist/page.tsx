@@ -4,13 +4,8 @@ import { WorkbenchSelect } from "@/components/WorkbenchSelect";
 
 import { Suspense, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Button, Dialog, DialogTrigger, Menu, MenuItem, MenuTrigger, Popover } from "react-aria-components";
 import {
-  FolderPlus,
-  MoreHorizontal,
-  Pencil,
-  Plus,
-  Trash2,
+  Flame,
   RefreshCw,
   SlidersHorizontal,
   TrendingUp
@@ -53,10 +48,8 @@ import {
   type WindowFilter
 } from "./_lib/douyin-hotlist-model";
 import { AccountManagementDrawer } from "./_components/AccountManagementDrawer";
-import { AccountFilter, WindowFilterControl } from "./_components/HotlistFilters";
-import { EmptyHotlist, HotlistLoadingRows, HotlistTable, getHotlistItemKey } from "./_components/HotlistTable";
-import { HotlistDetailDrawer } from "./_components/HotlistDetailDrawer";
-import { InkHero } from "@/components/InkHero";
+import { AccountFilter, PlatformFilterControl, WindowFilterControl } from "./_components/HotlistFilters";
+import { EmptyHotlist, HotlistLoadingRows, HotlistTable } from "./_components/HotlistTable";
 import { HotlistGroupEditor } from "./_components/HotlistGroupEditor";
 import { HotlistGroupFilter } from "./_components/HotlistGroupFilter";
 import { RefreshLogMenu } from "./_components/RefreshLogMenu";
@@ -236,21 +229,6 @@ function DouyinHotlistPageContent() {
     [groupAccountIds, selectedAccountId, selectedPlatform, snapshot?.items, sortMode]
   );
 
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [surgeOnly, setSurgeOnly] = useState(false);
-  const surgeCount = useMemo(() => visibleItems.filter(({ item }) => item.surge).length, [visibleItems]);
-  // 新进：24 小时内发布的条目。
-  const freshCount = useMemo(() => visibleItems.filter(({ item }) => item.ageHours !== undefined && item.ageHours < 24).length, [visibleItems]);
-  // “只看飙升”只筛显示，名次保留在全榜里的位置。
-  const shownItems = useMemo(() => surgeOnly ? visibleItems.filter(({ item }) => item.surge) : visibleItems, [surgeOnly, visibleItems]);
-  const selectedIndex = selectedKey ? shownItems.findIndex(({ item }) => getHotlistItemKey(item) === selectedKey) : -1;
-  const selectedEntry = selectedIndex >= 0 ? shownItems[selectedIndex] : null;
-  const closeDetail = useCallback(() => setSelectedKey(null), []);
-  const stepDetail = useCallback((delta: number) => {
-    const next = shownItems[Math.min(shownItems.length - 1, Math.max(0, selectedIndex + delta))];
-    if (next) setSelectedKey(getHotlistItemKey(next.item));
-  }, [selectedIndex, shownItems]);
-
   const summary = snapshot?.summary;
   const operationBusy = Boolean(busy) || refreshing || deletingGroup;
   const canAdd = Boolean(query.trim()) && !operationBusy;
@@ -260,7 +238,14 @@ function DouyinHotlistPageContent() {
   const windowLabel = getWindowLabel(summary?.windowKey || windowFilter);
   const selectedPlatformLabel = selectedPlatform ? getPlatformLabel(selectedPlatform) : "";
   const refreshLabel = selectedAccount ? "抓取当前账号" : selectedPlatform ? `抓取${selectedPlatformLabel}${windowLabel}` : `抓取全部${windowLabel}`;
+  const rankTitle = selectedAccount ? selectedAccount.name : selectedPlatform ? `${selectedPlatformLabel}热度榜` : selectedGroup?.name || "实时热度榜";
   const activePlatformFilter: Platform | "all" = selectedPlatform || selectedAccount?.platform || "all";
+  const visibleAccountCount = selectedAccount ? 1 : selectedPlatform ? selectedPlatformAccounts.length : groupAccounts.length;
+  const rankSubtitle = summary ? <>
+    <span><strong className="hotlist-summary-count">{visibleAccountCount}</strong> 个{selectedPlatformLabel}账号</span>
+    <span>{windowLabel} <strong className="hotlist-summary-count">{visibleItems.length}</strong> 条</span>
+    {initialLoading || refreshing ? <span className="status-pill pending">{initialLoading ? "读取中" : `刷新 ${Math.round(activeRefreshJob?.progress || 0)}%`}</span> : null}
+  </> : "正在读取视频热榜…";
 
   async function handleDeleteGroup() {
     if (!deleteGroupTarget || deleteGroupBusyRef.current) return;
@@ -411,174 +396,104 @@ function DouyinHotlistPageContent() {
     }
   }
 
-  const updatedLabel = formatRelativeTime(summary?.lastRefreshedAt);
-  const heroTitle = selectedAccount ? selectedAccount.name
-    : selectedGroup ? selectedGroup.name
-      : windowFilter === "3d" ? "近三天热榜" : "今日热榜";
-  const filterBadge = Number(windowFilter !== "3d") + Number(selectedGroupId !== "all") + Number(Boolean(selectedAccount));
-
   return (
-    <div className={`page douyin-hotlist-page hl-page ${selectedEntry ? "has-detail" : ""}`}>
-      <InkHero
-        key={heroTitle}
-        eyebrow={<>{heroDateLabel()} · {refreshing ? `正在抓取 ${Math.round(activeRefreshJob?.progress || 0)}%` : updatedLabel ? `${updatedLabel}更新` : "尚未抓取"}</>}
-        title={heroTitle}
-        stats={[
-          { label: "在榜", value: visibleItems.length },
-          { label: "新进", value: freshCount, format: (value) => `+${Math.round(value)}` },
-          { label: "飙升", value: surgeCount, tone: "signal" }
-        ]}
-      />
-
-      {error ? <div className="error" role="alert">{error}</div> : null}
-
-      <section className="hl-toolbar" aria-label="榜单筛选">
-        <div className="hl-chips" role="group" aria-label="平台">
-          {([["all", "全部"], ["douyin", "抖音"], ["bilibili", "B站"]] as const).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              className={`hl-chip ${activePlatformFilter === value && !surgeOnly ? "active" : ""}`}
-              aria-pressed={activePlatformFilter === value && !surgeOnly}
-              disabled={operationBusy || initialLoading || (value !== "all" && !groupAccounts.length)}
-              onClick={() => {
-                setSurgeOnly(false);
-                setSelectedAccountId(value === "all" ? "all" : getPlatformAccountSelection(value));
-              }}
-            >
-              {label}{value === "all" ? <small>{visibleItems.length}</small> : null}
-            </button>
-          ))}
-          <button
-            type="button"
-            className={`hl-chip is-signal ${surgeOnly ? "active" : ""}`}
-            aria-pressed={surgeOnly}
-            disabled={!surgeCount && !surgeOnly}
-            onClick={() => setSurgeOnly((current) => !current)}
-          >
-            只看飙升{surgeCount ? <small>{surgeCount}</small> : null}
-          </button>
-          <DialogTrigger>
-            <Button className={`hl-chip is-dashed ${filterBadge ? "has-filters" : ""}`} aria-label="更多筛选">
-              <Plus aria-hidden="true" size={13} />筛选{filterBadge ? <small>{filterBadge}</small> : null}
-            </Button>
-            <Popover className="workbench-select-popover hl-filter-popover" placement="bottom start" offset={8}>
-              <Dialog className="hl-filter-panel" aria-label="更多筛选">
-                <div className="hl-filter-row">
-                  <span>时间</span>
-                  <WindowFilterControl disabled={operationBusy} onChange={setWindowFilter} value={windowFilter} />
-                </div>
-                <div className="hl-filter-row">
-                  <span>分组</span>
-                  <HotlistGroupFilter
-                    groups={snapshot?.groups ?? []} selectedId={selectedGroupId} accountCount={snapshot?.accounts.length ?? 0}
-                    disabled={operationBusy || !snapshot}
-                    showActions={false}
-                    onSelect={(group) => setSelection({ group, account: "all" })}
-                    onAdd={() => setGroupEditor("new")}
-                    onEdit={() => setGroupEditor(selectedGroupId)}
-                    onDelete={() => undefined}
-                  />
-                </div>
-                <div className="hl-filter-row">
-                  <span>账号</span>
-                  <AccountFilter
-                    accounts={groupAccounts}
-                    disabled={operationBusy || initialLoading || !groupAccounts.length}
-                    onChange={setSelectedAccountId}
-                    value={selectedAccountId}
-                  />
-                </div>
-                {filterBadge ? (
-                  <button className="btn ghost compact hl-filter-reset" type="button" onClick={() => {
-                    setSelection({ group: "all", account: "all", window: "3d" });
-                  }}>清除筛选</button>
-                ) : null}
-              </Dialog>
-            </Popover>
-          </DialogTrigger>
+    <div className="page douyin-hotlist-page workbench-frame-page">
+      <header className="page-header">
+        <div className="page-title-group">
+          <span className="page-title-eyebrow">对标内容</span>
+          <div className="page-title-row">
+            <span className="page-title-mark" aria-hidden="true">
+              <Flame size={20} strokeWidth={2.1} />
+            </span>
+            <div className="page-title-copy">
+              <h1>视频热榜</h1>
+              <p className="subtle">维护抖音 / B站独立对标池，抓取{windowLabel}值得拆解的内容。</p>
+            </div>
+          </div>
         </div>
-
-        <div className="hl-toolbar-right">
-          <label className="hl-sort">
-            <span>按</span>
-            <WorkbenchSelect
-              aria-label="榜单排序"
-              disabled={operationBusy}
-              onValueChange={(value) => setSortMode(value as SortMode)}
-              value={sortMode}
-            >
-              {sortOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </WorkbenchSelect>
-            <span>排序</span>
-          </label>
+        <div className="page-header-meta">
+          <button className="btn" onClick={() => setAccountDrawerOpen(true)} type="button">
+            <SlidersHorizontal aria-hidden="true" size={16} />
+            管理账号
+          </button>
           <RefreshLogMenu error={refreshLogsError} loading={refreshLogsLoading} logs={refreshLogs} />
-          <MenuTrigger>
-            <Button className="btn icon-only compact" aria-label="更多操作">
-              <MoreHorizontal aria-hidden="true" size={17} />
-            </Button>
-            <Popover isNonModal className="workbench-select-popover ink-menu-popover" placement="bottom end" offset={8}>
-              <Menu className="workbench-select-options ink-menu" aria-label="热榜操作">
-                <MenuItem className="workbench-select-option" textValue="管理监控账号" onAction={() => setAccountDrawerOpen(true)}>
-                  <SlidersHorizontal aria-hidden="true" size={14} /><span>管理监控账号</span>
-                </MenuItem>
-                <MenuItem className="workbench-select-option" textValue="重新读取榜单" isDisabled={operationBusy} onAction={() => void loadHotlist({ force: true })}>
-                  <RefreshCw aria-hidden="true" size={14} /><span>重新读取榜单</span>
-                </MenuItem>
-                <MenuItem className="workbench-select-option" textValue="新建分组" isDisabled={operationBusy || !snapshot} onAction={() => setGroupEditor("new")}>
-                  <FolderPlus aria-hidden="true" size={14} /><span>新建分组</span>
-                </MenuItem>
-                {selectedGroup ? (
-                  <MenuItem className="workbench-select-option" textValue="编辑当前分组" isDisabled={operationBusy} onAction={() => setGroupEditor(selectedGroupId)}>
-                    <Pencil aria-hidden="true" size={14} /><span>编辑「{selectedGroup.name}」</span>
-                  </MenuItem>
-                ) : null}
-                {selectedGroup ? (
-                  <MenuItem className="workbench-select-option is-danger" textValue="删除当前分组" isDisabled={operationBusy} onAction={() => {
-                    setDeleteGroupError("");
-                    setDeleteGroupTarget({ id: selectedGroup.id, name: selectedGroup.name, revision: snapshot?.groupRevision ?? 0 });
-                  }}>
-                    <Trash2 aria-hidden="true" size={14} /><span>删除「{selectedGroup.name}」</span>
-                  </MenuItem>
-                ) : null}
-              </Menu>
-            </Popover>
-          </MenuTrigger>
-          <button className="btn primary compact" aria-busy={refreshing} disabled={!canRefresh} onClick={() => void handleRefresh()} type="button">
-            <TrendingUp aria-hidden="true" size={15} />
+          <button className="btn" aria-busy={busy === "load"} disabled={operationBusy} onClick={() => void loadHotlist({ force: true })} type="button">
+            <RefreshCw aria-hidden="true" size={16} />
+            重载
+          </button>
+          <button className="btn primary" aria-busy={refreshing} disabled={!canRefresh} onClick={() => void handleRefresh()} type="button">
+            <TrendingUp aria-hidden="true" size={16} />
             {activeRefreshJob ? `抓取中 ${Math.round(activeRefreshJob.progress)}%` : refreshLabel}
           </button>
         </div>
-      </section>
-      {snapshot && selectedGroupId !== "all" && !selectedGroup ? <p className="error" role="alert">该分组不存在，请选择“全部”或重新加载。</p> : null}
+      </header>
 
-      <section className="hl-content">
-        {initialLoading ? (
-          <HotlistLoadingRows />
-        ) : shownItems.length ? (
-          <HotlistTable
-            items={shownItems}
-            showGlobalRank={Boolean(selectedAccount)}
-            selectedKey={selectedEntry ? selectedKey : null}
-            onSelect={(key) => setSelectedKey((current) => current === key ? null : key)}
+      {error ? <div className="error" role="alert">{error}</div> : null}
+
+      <section className="douyin-hotlist-workspace workbench-frame-workspace">
+        <section className="pane douyin-hotlist-rank-pane">
+          <HotlistGroupFilter
+            groups={snapshot?.groups ?? []} selectedId={selectedGroupId} accountCount={snapshot?.accounts.length ?? 0}
+            disabled={operationBusy || !snapshot}
+            onSelect={(group) => setSelection({ group, account: "all" })}
+            onAdd={() => setGroupEditor("new")}
+            onEdit={() => setGroupEditor(selectedGroupId)}
+            onDelete={() => {
+              if (!selectedGroup) return;
+              setDeleteGroupError("");
+              setDeleteGroupTarget({ id: selectedGroup.id, name: selectedGroup.name, revision: snapshot?.groupRevision ?? 0 });
+            }}
           />
-        ) : selectedGroup && !groupAccounts.length ? (
-          <div className="hl-empty"><h2>这个分组还没有账号</h2><p className="subtle">添加监控账号后，这里会集中显示它们的视频。</p><button className="btn" type="button" onClick={() => setGroupEditor(selectedGroup.id)}>选择分组账号</button></div>
-        ) : (
-          <EmptyHotlist hasAccounts={Boolean(snapshot?.accounts.length)} selectedAccount={selectedAccount?.name} windowLabel={windowLabel} />
-        )}
+          {snapshot && selectedGroupId !== "all" && !selectedGroup ? <p className="error" role="alert">该分组不存在，请选择“全部”或重新加载。</p> : null}
+          <div className="pane-header">
+            <div>
+              <h2>{rankTitle}</h2>
+              <p className="pane-subtitle hotlist-summary" aria-live="polite">{rankSubtitle}</p>
+            </div>
+            <div className="douyin-hotlist-rank-actions">
+              <WindowFilterControl
+                disabled={operationBusy}
+                onChange={setWindowFilter}
+                value={windowFilter}
+              />
+              <PlatformFilterControl
+                disabled={operationBusy || initialLoading || !groupAccounts.length}
+                onChange={(platform) => setSelectedAccountId(platform === "all" ? "all" : getPlatformAccountSelection(platform))}
+                value={activePlatformFilter}
+              />
+              <AccountFilter
+                accounts={groupAccounts}
+                disabled={operationBusy || initialLoading || !groupAccounts.length}
+                onChange={setSelectedAccountId}
+                value={selectedAccountId}
+              />
+              <label className="inline-sort-control douyin-hotlist-sort">
+                <span>排序</span>
+                <WorkbenchSelect
+                  aria-label="榜单排序"
+                  disabled={operationBusy}
+                  onValueChange={(value) => setSortMode(value as SortMode)}
+                  value={sortMode}
+                >
+                  {sortOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </WorkbenchSelect>
+              </label>
+            </div>
+          </div>
+
+          {initialLoading ? (
+            <HotlistLoadingRows />
+          ) : visibleItems.length ? (
+            <HotlistTable items={visibleItems} showGlobalRank={Boolean(selectedAccount)} />
+          ) : selectedGroup && !groupAccounts.length ? (
+            <div className="hotlist-group-empty"><h3>这个分组还没有账号</h3><p className="subtle">添加监控账号后，这里会集中显示它们的视频。</p><button className="btn" type="button" onClick={() => setGroupEditor(selectedGroup.id)}>选择分组账号</button></div>
+          ) : (
+            <EmptyHotlist hasAccounts={Boolean(snapshot?.accounts.length)} selectedAccount={selectedAccount?.name} windowLabel={windowLabel} />
+          )}
+        </section>
       </section>
-      {selectedEntry ? (
-        <HotlistDetailDrawer
-          entry={selectedEntry}
-          position={selectedIndex}
-          total={shownItems.length}
-          onClose={closeDetail}
-          onStep={stepDetail}
-        />
-      ) : null}
       {deleteGroupTarget ? <ConfirmDialog
         title="删除这个分组？"
         body={<><p>将删除“{deleteGroupTarget.name}”分组，监控账号、视频和其他分组都会保留。</p>{deleteGroupError ? <p className="error" role="alert">{deleteGroupError}</p> : null}</>}
@@ -638,28 +553,12 @@ function DouyinHotlistPageContent() {
 
 function DouyinHotlistFallback() {
   return (
-    <div className="page douyin-hotlist-page hl-page">
-      <section className="hl-content">
-        <HotlistLoadingRows />
+    <div className="page douyin-hotlist-page workbench-frame-page">
+      <section className="douyin-hotlist-workspace workbench-frame-workspace">
+        <section className="pane douyin-hotlist-rank-pane">
+          <HotlistLoadingRows />
+        </section>
       </section>
     </div>
   );
-}
-
-const heroDateFormatter = new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", weekday: "short" });
-
-function heroDateLabel() {
-  return heroDateFormatter.format(new Date());
-}
-
-function formatRelativeTime(value?: string) {
-  if (!value) return "";
-  const time = Date.parse(value);
-  if (!Number.isFinite(time)) return "";
-  const minutes = Math.max(0, Math.round((Date.now() - time) / 60_000));
-  if (minutes < 1) return "刚刚";
-  if (minutes < 60) return `${minutes} 分钟前`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
-  return `${Math.round(hours / 24)} 天前`;
 }

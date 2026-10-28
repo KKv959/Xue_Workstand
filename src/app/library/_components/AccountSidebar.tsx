@@ -1,13 +1,11 @@
 "use client";
 
 import { memo } from "react";
-import { CheckCircle2, CircleDashed, ListChecks, Music2, Search, Trash2, TvMinimal, X, Plus } from "lucide-react";
+import { CheckCircle2, CircleDashed, ListChecks, Music2, Search, Trash2, TvMinimal, X } from "lucide-react";
 import { formatPlatform } from "@/components/Formatters";
 import type { AccountListItem } from "@/lib/types";
 
 type AccountSidebarProps = {
-  collectOpen: boolean;
-  onToggleCollect: () => void;
   accountFilter: string;
   accountManageMode: boolean;
   accounts: AccountListItem[];
@@ -38,9 +36,7 @@ export const AccountSidebar = memo(function AccountSidebar({
   onSelectAccount,
   onToggleAccountManage,
   onToggleAllAccounts,
-  onToggleManagedAccount,
-  collectOpen,
-  onToggleCollect
+  onToggleManagedAccount
 }: AccountSidebarProps) {
   const allVisibleSelected = Boolean(accounts.length && accounts.every((account) => selectedAccountIds.includes(account.id)));
   return (
@@ -51,17 +47,6 @@ export const AccountSidebar = memo(function AccountSidebar({
         </div>
         <div className="account-manage-actions">
           <button
-            className={`btn compact icon-only account-collect-toggle ${collectOpen ? "active" : "primary"}`}
-            aria-controls="library-collect-panel"
-            aria-expanded={collectOpen}
-            aria-label={collectOpen ? "收起采集" : "采集新账号"}
-            onClick={onToggleCollect}
-            title={collectOpen ? "收起采集" : "采集新账号"}
-            type="button"
-          >
-            <Plus aria-hidden="true" size={16} className="account-collect-icon" />
-          </button>
-          <button
             className="btn compact account-manage-toggle"
             aria-label={accountManageMode ? "退出账号选择" : "批量选择账号"}
             onClick={onToggleAccountManage}
@@ -69,7 +54,7 @@ export const AccountSidebar = memo(function AccountSidebar({
             type="button"
           >
             {accountManageMode ? <X aria-hidden="true" size={15} /> : <ListChecks aria-hidden="true" size={15} />}
-            {accountManageMode ? "取消" : null}
+            {accountManageMode ? "取消" : "多选"}
           </button>
         </div>
       </div>

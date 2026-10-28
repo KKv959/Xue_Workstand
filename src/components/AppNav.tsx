@@ -1,189 +1,249 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { Command, Cpu, Settings2 } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent } from "react";
+import {
+  ImagePlus,
+  Activity,
+  Calculator,
+  LibraryBig,
+  Flame,
+  Layers2,
+  MessageSquarePlus,
+  PenLine,
+  Radar,
+  Sword,
+  Wrench,
+  Settings2
+} from "lucide-react";
+import { TaskCenter } from "./TaskCenter";
+import { SkinToggle } from "./SkinToggle";
 import { ServiceModeControl } from "./ServiceModeControl";
-import { NavigationPreferences, type useNavigationVisibility } from "./NavigationPreferences";
-import { useRemoteStatus } from "./RemoteStatusProvider";
-import { navPrefetch, useNavIntent } from "./useNavIntent";
-import { getActiveSpace, getPreferenceItems, matchRoute, type Space } from "./workspace-spaces";
-import { OPEN_COMMAND_PALETTE_EVENT } from "./CommandPalette";
+import { NavigationPreferences, useNavigationVisibility } from "./NavigationPreferences";
 import type { AppMode } from "@/lib/app-mode";
 
-const LAST_ROUTE_KEY = "workbench-space-last-route";
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof Activity;
+  group: "内容发现" | "创作工作区" | "数据与工具";
+};
 
-export function AppNav({ appMode, navigation, visibleSpaces }: {
-  appMode: AppMode;
-  navigation: ReturnType<typeof useNavigationVisibility>;
-  visibleSpaces: Space[];
-}) {
+const navItems: NavItem[] = [
+  { href: "/images", label: "生图工作台", icon: ImagePlus, group: "数据与工具" },
+  { href: "/hotspots", label: "热点雷达", icon: Radar, group: "内容发现" },
+  { href: "/douyin-hotlist", label: "视频热榜", icon: Flame, group: "内容发现" },
+  { href: "/library", label: "账号库", icon: LibraryBig, group: "创作工作区" },
+  { href: "/writer", label: "对话写作", icon: PenLine, group: "创作工作区" },
+  { href: "/assets", label: "评论生成", icon: MessageSquarePlus, group: "创作工作区" },
+  { href: "/tools", label: "工具台", icon: Wrench, group: "数据与工具" },
+  { href: "/ai-settings", label: "AI 模型配置", icon: Settings2, group: "数据与工具" },
+  { href: "/gross-margin", label: "数据维护", icon: Calculator, group: "数据与工具" },
+  { href: "/gross-margin/monitor", label: "数据监控", icon: Activity, group: "数据与工具" },
+];
+
+const navGroupOrder: NavItem["group"][] = ["内容发现", "创作工作区", "数据与工具"];
+const navGroupCodes: Record<NavItem["group"], string> = {
+  "内容发现": "壱 · RECON",
+  "创作工作区": "弐 · CREATION",
+  "数据与工具": "参 · ARSENAL"
+};
+
+const grossMarginNavItems = navItems.filter((item) => item.href.startsWith("/gross-margin"));
+const ROUTE_BUSY_DELAY_MS = 200;
+const ROUTE_INTENT_DELAY_MS = 180;
+// 按悬停、聚焦或触摸意图预取目标，避免争抢首屏带宽。
+const navPrefetch = false;
+
+export function AppNav({ appMode }: { appMode: AppMode }) {
+  const router = useRouter();
   const pathname = usePathname();
+  const pendingTimerRef = useRef<number | null>(null);
+  const prewarmedRoutesRef = useRef<Set<string>>(new Set());
+  const prewarmTimerRef = useRef<number | null>(null);
+  const prewarmControllerRef = useRef<AbortController | null>(null);
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const [showRouteBusy, setShowRouteBusy] = useState(false);
   const grossMarginMode = appMode === "gross-margin";
-  const activeSpace = getActiveSpace(pathname, visibleSpaces);
-  const activeIndex = activeSpace ? visibleSpaces.findIndex((space) => space.id === activeSpace.id) : -1;
-  const lastRoutes = useLastSpaceRoutes(pathname, visibleSpaces);
+  const navigation = useNavigationVisibility();
+  const visibleNavItems = useMemo(() => grossMarginMode ? grossMarginNavItems : navItems, [grossMarginMode]);
+  const visibleNavGroups = useMemo(() => navGroupOrder
+    .map((label) => ({ label, items: visibleNavItems.filter((item) => item.group === label && item.href !== "/ai-settings" && !navigation.hidden.includes(item.href)) }))
+    .filter((group) => group.items.length), [visibleNavItems, navigation.hidden]);
   const brandHref = grossMarginMode ? "/gross-margin" : "/douyin-hotlist";
-  const { pendingHref, showRouteBusy, linkProps } = useNavIntent(activeSpace ? lastRoutes[activeSpace.id] : undefined);
+  const activeHref = visibleNavItems
+    .filter((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
+    .sort((left, right) => right.href.length - left.href.length)[0]?.href;
 
-  return (
-    <aside className="rail" aria-label="工作空间">
-      {showRouteBusy ? <span className="route-progress" aria-hidden="true" /> : null}
-      <Link href={brandHref} prefetch={navPrefetch} className="rail-brand" aria-label={grossMarginMode ? "数据维护监控" : "风格库首页"} {...linkProps(brandHref)}>
-        <span aria-hidden="true">{grossMarginMode ? "数" : "风"}</span>
-      </Link>
-      <nav className="rail-spaces" aria-label="主导航" style={{ "--rail-index": activeIndex } as CSSProperties}>
-        {activeIndex >= 0 ? <span className="rail-indicator" aria-hidden="true" /> : null}
-        {visibleSpaces.map((space) => {
-          const href = lastRoutes[space.id] ?? space.routes[0].href;
-          const active = space.id === activeSpace?.id;
-          const pending = !active && pendingHref !== null && space.routes.some((route) => route.href === pendingHref);
-          const Icon = space.icon;
-          return (
-            <Link
-              key={space.id}
-              href={href}
-              prefetch={navPrefetch}
-              className={`rail-link ${active ? "active" : ""} ${pending ? "pending" : ""}`}
-              aria-current={active ? "page" : undefined}
-              title={`${space.label} · ${space.hint}（${space.shortcut}）`}
-              {...linkProps(href)}
-            >
-              <Icon size={20} strokeWidth={active ? 2.1 : 1.8} aria-hidden="true" />
-              <span>{space.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
-      <div className="rail-bottom">
-        <ConnectionDot />
-        <button
-          type="button"
-          className="rail-kbd"
-          aria-label="打开指令面板（⌘K）"
-          title="指令面板"
-          onClick={() => window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE_EVENT))}
-        >
-          ⌘K
-        </button>
-        <SystemMenu appMode={appMode} navigation={navigation} aiActive={pathname.startsWith("/ai-settings")} />
-      </div>
-    </aside>
-  );
-}
-
-/** 记住每个空间上次停留的页面，回到空间时直接落在那里。 */
-function useLastSpaceRoutes(pathname: string, visibleSpaces: Space[]) {
-  const [routes, setRoutes] = useState<Partial<Record<Space["id"], string>>>({});
-
-  useEffect(() => {
-    try {
-      const raw = window.sessionStorage.getItem(LAST_ROUTE_KEY);
-      if (raw) setRoutes(JSON.parse(raw));
-    } catch {
-      // 会话存储不可用时退回每个空间的第一个页面。
+  const clearPending = useCallback(() => {
+    if (pendingTimerRef.current !== null) {
+      window.clearTimeout(pendingTimerRef.current);
+      pendingTimerRef.current = null;
     }
+    setPendingHref(null);
+    setShowRouteBusy(false);
   }, []);
 
   useEffect(() => {
-    const space = getActiveSpace(pathname, visibleSpaces);
-    const route = space ? matchRoute(pathname, space.routes) : undefined;
-    if (!space || !route) return;
-    setRoutes((current) => {
-      if (current[space.id] === route.href) return current;
-      const next = { ...current, [space.id]: route.href };
-      try {
-        window.sessionStorage.setItem(LAST_ROUTE_KEY, JSON.stringify(next));
-      } catch {
-        // 记不住上次位置不影响导航。
+    clearPending();
+  }, [clearPending, pathname]);
+
+  const cancelPrewarm = useCallback(() => {
+    if (prewarmTimerRef.current !== null) window.clearTimeout(prewarmTimerRef.current);
+    prewarmTimerRef.current = null;
+    prewarmControllerRef.current?.abort();
+    prewarmControllerRef.current = null;
+  }, []);
+
+  const prewarmRoute = useCallback((href: string) => {
+    cancelPrewarm();
+    if (href === pathname || prewarmedRoutesRef.current.has(href)) return;
+    // 只预热用户停留的目标，不在后台遍历全站或触发业务 API。
+    prewarmTimerRef.current = window.setTimeout(async () => {
+      prewarmTimerRef.current = null;
+      if (process.env.NODE_ENV !== "development") {
+        prewarmedRoutesRef.current.add(href);
+        router.prefetch(href);
+        return;
       }
-      return next;
-    });
-  }, [pathname, visibleSpaces]);
+      const controller = new AbortController();
+      prewarmControllerRef.current = controller;
+      const timeout = window.setTimeout(() => controller.abort(), 5000);
+      try {
+        const response = await fetch(href, {
+          cache: "no-store", signal: controller.signal,
+          headers: { "x-workbench-route-warmup": "1" }
+        });
+        if (response.ok) prewarmedRoutesRef.current.add(href);
+        await response.body?.cancel();
+      } catch {
+        // 可选预热失败不影响真实导航，后续停留时可以重新尝试。
+      } finally {
+        window.clearTimeout(timeout);
+        if (prewarmControllerRef.current === controller) prewarmControllerRef.current = null;
+      }
+    }, ROUTE_INTENT_DELAY_MS);
+  }, [cancelPrewarm, pathname, router]);
 
-  // 被隐藏的页面不再作为空间入口。
-  return Object.fromEntries(Object.entries(routes).filter(([id, href]) =>
-    visibleSpaces.some((space) => space.id === id && space.routes.some((route) => route.href === href))
-  )) as Partial<Record<Space["id"], string>>;
-}
+  useEffect(() => () => {
+    cancelPrewarm();
+    if (pendingTimerRef.current !== null) window.clearTimeout(pendingTimerRef.current);
+  }, [cancelPrewarm, pathname]);
 
-function ConnectionDot() {
-  const remote = useRemoteStatus();
-  const label = remote.connection === "online" ? "后台在线"
-    : remote.connection === "degraded" ? "后台部分可用"
-      : remote.connection === "offline" ? "后台离线" : "正在检查后台";
-  return (
-    <span className={`rail-connection ${remote.connection}`} role="status" aria-label={label} title={label}>
-      <span aria-hidden="true" />
-    </span>
-  );
-}
+  const beginNavigation = useCallback((href: string) => {
+    if (href === activeHref || href === pathname) return;
+    setPendingHref(href);
+    if (pendingTimerRef.current !== null) {
+      window.clearTimeout(pendingTimerRef.current);
+    }
+    pendingTimerRef.current = window.setTimeout(() => {
+      setShowRouteBusy(true);
+    }, ROUTE_BUSY_DELAY_MS);
+  }, [activeHref, pathname]);
 
-function SystemMenu({ appMode, navigation, aiActive }: {
-  appMode: AppMode;
-  navigation: ReturnType<typeof useNavigationVisibility>;
-  aiActive: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const grossMarginMode = appMode === "gross-margin";
-  const preferenceItems = useMemo(() => getPreferenceItems(appMode), [appMode]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      // 弹窗渲染在 body 上，点到弹窗里不算点到菜单外。
-      if (rootRef.current?.contains(target) || (target as Element).closest?.(".workbench-modal, [data-react-aria-top-layer]")) return;
-      setOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
+  const handleNavClick = useCallback((event: MouseEvent<HTMLAnchorElement>, href: string) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    cancelPrewarm();
+    if (href === activeHref || href === pathname) clearPending();
+    else beginNavigation(href);
+  }, [activeHref, beginNavigation, cancelPrewarm, clearPending, pathname]);
 
   return (
-    <div className="rail-system" ref={rootRef}>
-      <button
-        type="button"
-        className={`rail-system-trigger ${open || aiActive ? "active" : ""}`}
-        aria-expanded={open}
-        aria-label="系统设置"
-        title="系统设置"
-        onClick={() => setOpen((current) => !current)}
+    <aside className="sidebar">
+      {showRouteBusy ? <span className="route-progress" aria-hidden="true" /> : null}
+      <Link
+        href={brandHref}
+        prefetch={navPrefetch}
+        className="brand"
+        onFocus={() => void prewarmRoute(brandHref)}
+        onTouchStart={() => void prewarmRoute(brandHref)}
+        onClick={(event) => handleNavClick(event, brandHref)}
+        onPointerLeave={cancelPrewarm}
+        onBlur={cancelPrewarm}
+        onPointerEnter={() => void prewarmRoute(brandHref)}
       >
-        <Settings2 size={19} strokeWidth={1.8} aria-hidden="true" />
-      </button>
-      {/* 菜单内容保持挂载：服务模式等弹窗是菜单项的子组件，关闭菜单不能把弹窗一起卸掉。 */}
-      <div className="rail-system-menu" data-open={open ? "true" : "false"} aria-hidden={!open} inert={!open}>
-        <button
-          type="button"
-          className="rail-system-item"
-          onClick={() => {
-            setOpen(false);
-            window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE_EVENT));
-          }}
-        >
-          <Command size={16} strokeWidth={1.8} aria-hidden="true" />
-          <span>指令面板</span>
-          <kbd>⌘K</kbd>
-        </button>
+        <span className="brand-mark" aria-hidden="true">
+          <Layers2 className="brand-mark-default" size={23} strokeWidth={1.8} />
+          <Sword className="brand-mark-shinigami" size={20} strokeWidth={1.9} />
+        </span>
+        <span className="brand-copy brand-copy-default">
+          <strong>{grossMarginMode ? "数据维护监控" : "风格库"}</strong>
+          <small>{grossMarginMode ? "Windows 便携版" : "创作工作台"}</small>
+        </span>
+        <span className="brand-copy brand-copy-shinigami">
+          <strong>BLEACH</strong>
+          <small>死神 · SOUL SOCIETY</small>
+        </span>
+      </Link>
+      <nav className="nav-list" aria-label="主导航">
+        <NavigationPreferences items={visibleNavItems} hidden={navigation.hidden} error={navigation.error} ready={navigation.ready} onSave={navigation.save} />
+        {visibleNavGroups.map((group) => {
+          return (
+            <section className="nav-section" key={group.label} aria-labelledby={`nav-${group.label}`}>
+              <h2 className="nav-section-label" id={`nav-${group.label}`}>
+                <span>{group.label}</span>
+                <small className="nav-section-code" aria-hidden="true">{navGroupCodes[group.label]}</small>
+              </h2>
+              <div className="nav-section-items">
+                {group.items.map((item) => {
+                  const active = item.href === activeHref;
+                  const pending = item.href === pendingHref && !active;
+                  const Icon = item.icon;
+                  return (
+                    <div className="nav-group" key={item.href}>
+                      <Link
+                        href={item.href}
+                        prefetch={navPrefetch}
+                        className={`nav-link ${active ? "active" : ""} ${pending ? "pending" : ""}`}
+                        aria-current={active ? "page" : undefined}
+                        onFocus={() => void prewarmRoute(item.href)}
+        onTouchStart={() => void prewarmRoute(item.href)}
+                        onClick={(event) => handleNavClick(event, item.href)}
+                        onPointerLeave={cancelPrewarm}
+                        onBlur={cancelPrewarm}
+                        onPointerEnter={() => void prewarmRoute(item.href)}
+                      >
+                        <span className="nav-emoji" aria-hidden="true">
+                          <Icon size={18} strokeWidth={1.75} />
+                        </span>
+                        <span>{item.label}</span>
+                        <span className="nav-soul-mark" aria-hidden="true">魂</span>
+                      </Link>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
+      </nav>
+      <div className="sidebar-bottom">
+        <SkinToggle />
+        <TaskCenter />
+        {!grossMarginMode ? <ServiceModeControl /> : null}
         {!grossMarginMode && !navigation.hidden.includes("/ai-settings") ? (
-          <Link href="/ai-settings" prefetch={navPrefetch} className={`rail-system-item ${aiActive ? "active" : ""}`} onClick={() => setOpen(false)}>
-            <Cpu size={16} strokeWidth={1.8} aria-hidden="true" />
+          <Link
+            href="/ai-settings"
+            prefetch={navPrefetch}
+            className={`btn ghost nav-link sidebar-settings ${activeHref === "/ai-settings" ? "active" : ""} ${pendingHref === "/ai-settings" && activeHref !== "/ai-settings" ? "pending" : ""}`}
+            style={{ width: "100%", justifyContent: "flex-start" }}
+            aria-current={activeHref === "/ai-settings" ? "page" : undefined}
+            onFocus={() => void prewarmRoute("/ai-settings")}
+        onTouchStart={() => void prewarmRoute("/ai-settings")}
+            onClick={(event) => handleNavClick(event, "/ai-settings")}
+            onPointerLeave={cancelPrewarm}
+            onBlur={cancelPrewarm}
+            onPointerEnter={() => void prewarmRoute("/ai-settings")}
+          >
+            <Settings2 size={18} strokeWidth={1.75} aria-hidden="true" />
             <span>AI 模型配置</span>
           </Link>
         ) : null}
-        {!grossMarginMode ? <div className="rail-system-service"><ServiceModeControl /></div> : null}
-        <div className="rail-system-preferences">
-          <NavigationPreferences items={preferenceItems} hidden={navigation.hidden} error={navigation.error} ready={navigation.ready} onSave={navigation.save} />
-        </div>
       </div>
-    </div>
+    </aside>
   );
 }

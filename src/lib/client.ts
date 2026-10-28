@@ -1,3 +1,4 @@
+import { loadCachedTranscript, invalidateTranscriptCache, type TranscriptIdentity } from "./transcript-cache";
 import type { ImageFile, ImageGenerationConfig, ImageGenerationList, ImageGenerationRecord } from "./image-generation-types";
 import type { WriterPromptAssistResult } from "./writer-prompt-assist";
 
@@ -485,6 +486,10 @@ function downloadBlob(blob: Blob, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
+export function getLibraryBootstrap(query: string) {
+  return requestJson<import("./types").LibraryBootstrapResponse>(`/api/library/bootstrap?${query}`);
+}
+
 export function getLibraryOverview() {
   return requestJson<LibraryOverviewResponse>("/api/library/overview");
 }
@@ -714,10 +719,11 @@ export function getLibraryTrashOperations() {
 }
 
 export function restoreLibraryTrashOperation(operationId: string) {
+  invalidateTranscriptCache();
   return requestJson<{ operation: LibraryTrashOperation }>("/api/library/trash", {
     method: "POST",
     body: JSON.stringify({ action: "restore", operationId })
-  });
+  }).finally(() => invalidateTranscriptCache());
 }
 
 export function getJob(jobId: string) {
@@ -911,10 +917,11 @@ export async function saveHotspotFeedback(hotspotId: string, rating: import("./h
 }
 
 export function deleteAccounts(accountIds: string[]) {
+  invalidateTranscriptCache();
   return requestJson<{ deleted: string[] }>("/api/accounts", {
     method: "DELETE",
     body: JSON.stringify({ accountIds })
-  });
+  }).finally(() => invalidateTranscriptCache());
 }
 
 export function transcribeVideo(input: {
@@ -1003,9 +1010,9 @@ export async function streamBatchTranscribe(
   );
 }
 
-export function getTranscript(input: { platform: Platform; accountId: string; videoId: string }) {
-  const params = new URLSearchParams(input);
-  return requestJson<{ transcript: string; revision: string | null; versions: TranscriptVersion[] }>(`/api/transcripts?${params.toString()}`);
+export function getTranscript(input: TranscriptIdentity) {
+  const params = new URLSearchParams({ platform: input.platform, accountId: input.accountId, videoId: input.videoId });
+  return loadCachedTranscript(input, () => requestJson<{ transcript: string; revision: string | null; versions: TranscriptVersion[] }>(`/api/transcripts?${params.toString()}`));
 }
 
 export function saveTranscript(input: {
@@ -1015,6 +1022,7 @@ export function saveTranscript(input: {
   transcript: string;
   expectedRevision: string | null;
 }) {
+  invalidateTranscriptCache(input.platform, input.accountId, input.videoId);
   return requestJson<{
     transcript: string;
     revision: string | null;
@@ -1023,7 +1031,7 @@ export function saveTranscript(input: {
   }>("/api/transcripts", {
     method: "PUT",
     body: JSON.stringify(input)
-  });
+  }).finally(() => invalidateTranscriptCache(input.platform, input.accountId, input.videoId));
 }
 
 export function restoreTranscriptVersion(input: {
@@ -1033,6 +1041,7 @@ export function restoreTranscriptVersion(input: {
   versionId: string;
   expectedRevision: string | null;
 }) {
+  invalidateTranscriptCache(input.platform, input.accountId, input.videoId);
   return requestJson<{
     transcript: string;
     revision: string | null;
@@ -1041,7 +1050,7 @@ export function restoreTranscriptVersion(input: {
   }>("/api/transcripts", {
     method: "PATCH",
     body: JSON.stringify(input)
-  });
+  }).finally(() => invalidateTranscriptCache(input.platform, input.accountId, input.videoId));
 }
 
 export function getCachedEngagementRecords() {
@@ -1150,17 +1159,19 @@ export async function downloadSingleVideoAsset(input: { url: string; kind: Singl
 }
 
 export function deleteTranscript(input: { platform: Platform; accountId: string; videoId: string }) {
+  invalidateTranscriptCache(input.platform, input.accountId, input.videoId);
   return requestJson<{ video: Video }>("/api/transcripts", {
     method: "DELETE",
     body: JSON.stringify(input)
-  });
+  }).finally(() => invalidateTranscriptCache(input.platform, input.accountId, input.videoId));
 }
 
 export function deleteVideos(input: { platform: Platform; accountId: string; videoIds: string[] }) {
+  invalidateTranscriptCache(input.platform, input.accountId, undefined);
   return requestJson<{ deleted: string[] }>("/api/videos", {
     method: "DELETE",
     body: JSON.stringify(input)
-  });
+  }).finally(() => invalidateTranscriptCache(input.platform, input.accountId, undefined));
 }
 
 export type StyleGenerationResponse = {

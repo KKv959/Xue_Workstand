@@ -1,3 +1,6 @@
+import { getMustFireRows, matchMustFire } from "../gross-margin-must-fire";
+import { getGrossMarginMonitorProjectName } from "../gross-margin-projects";
+import { getGrossMarginProjectSource } from "./gross-margin-projects";
 import path from "path";
 import {
   GrossMarginAccountPrice,
@@ -130,7 +133,13 @@ export async function getGrossMarginLibrary(options: { refreshAccounts?: boolean
     })
   );
   const templates = await Promise.all(grossMarginTablePlatforms.map((platform) => getGrossMarginReviewTemplate(platform)));
-  const monitorRecords = await getGrossMarginMonitorRecords();
+  const [rawRecords, mustFireRows, projectSource] = await Promise.all([getGrossMarginMonitorRecords(), getMustFireRows(), getGrossMarginProjectSource()]);
+  const monitorRecords = rawRecords.map(record => {
+    const amount = matchMustFire(record, mustFireRows, getGrossMarginMonitorProjectName(record, projectSource.orders));
+    const currentStats = amount === undefined ? record.currentStats : { ...record.currentStats, mustFire: amount };
+    const metrics = buildGrossMarginMonitorMetrics(record.platform, record.targetStats, currentStats);
+    return { ...record, currentStats, metrics, maxDifferencePercent: metrics.reduce((max, metric) => Math.max(max, metric.differencePercent), 0), highRisk: metrics.some(metric => metric.highRisk) };
+  });
   const [localAccounts, persistedAccountSource] = await Promise.all([
     readJson<GrossMarginAccountPrice[]>(grossMarginAccountsPath()),
     readJson<import("../wecom-account-source").AccountSourceResult>(grossMarginWecomAccountsCachePath())
@@ -683,7 +692,7 @@ function buildGrossMarginMonitorMetrics(
 ): GrossMarginMonitorMetric[] {
   const services =
     platform === "bilibili"
-      ? (["play", "like", "coin", "favorite", "comment", "share", "danmaku", "blueLink", "mustFire"] as const)
+      ? (["play", "like", "coin", "favorite", "comment", "share", "danmaku", "mustFire"] as const)
       : (["play", "like", "comment", "favorite", "share"] as const);
 
   return services
@@ -702,7 +711,7 @@ function buildGrossMarginMonitorMetrics(
         difference,
         differencePercent,
         highRisk: hasCurrent && differencePercent >= 0.7,
-        manualOnly: service === "blueLink" || service === "mustFire" || (platform === "douyin" && service === "play")
+        manualOnly: service === "mustFire" || (platform === "douyin" && service === "play")
       } satisfies GrossMarginMonitorMetric;
     })
     .filter(Boolean) as GrossMarginMonitorMetric[];
