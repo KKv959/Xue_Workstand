@@ -34,7 +34,7 @@ Chinese UX copy should feel like a capable local tool: concise, specific, calm, 
 
 ## Strategic Principles
 
-- **Protect local assets first.** Deletion, migration, and batch rewriting must be conservative, recoverable, and confirmed.
+- **Protect local assets first.** Deletion, migration, and batch rewriting must preserve recoverability and reflect explicit user intent. Agent task authorization follows `AGENTS.md`.
 - **Content before controls.** Each page's first screen shows real content (ranked videos, the draft, job status), not a stack of toolbars. On a phone, the first item must be visible without scrolling.
 - **Fast on a slow link.** Show cached or last-known data immediately and update in place. Send few requests, never fetch the same data twice in one visit, and keep heavy checks off the critical path. Perceived speed matters more than animation.
 - **Dense on desktop, focused on mobile.** Desktop shows many rows and panes at once; mobile shows one task per screen and collapses secondary filters and actions.
@@ -43,7 +43,7 @@ Chinese UX copy should feel like a capable local tool: concise, specific, calm, 
 
 ## Constraints
 
-- The public link currently has no login: anyone with the URL can view and operate the workbench on shared local data. New features must not assume a trusted viewer. Service-level and credential actions (service-mode switch, model sign-in, settings that hold secrets) are local-only; destructive actions stay recoverable and confirmed. Engineering rules for this live in `AGENTS.md`.
+- The public link currently has no login: anyone with the URL can view and operate the workbench on shared local data. New features must not assume a trusted viewer. Service-level and credential actions (service-mode switch, settings that hold secrets) are local-only; destructive UI actions stay recoverable and require the user's confirmation. This UI behavior does not add per-step approvals to an authorized Agent task.
 - The service runs on one Mac. When the Mac sleeps or the tunnel drops, the UI must say so clearly and keep what is already on screen.
 
 ## Anti-References

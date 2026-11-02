@@ -5,6 +5,7 @@ import net from "net";
 import os from "os";
 import path from "path";
 import process from "process";
+import { sourceEntries, hashEntries, releaseInputs, hashArtifact, writeJsonAtomic, readCandidate } from "./lib/remote-release.mjs";
 
 const root = process.env.WORKBENCH_SOURCE_ROOT || process.cwd();
 const stateRoot = path.join(root, ".remote-server");
@@ -17,20 +18,13 @@ const launchAgentPath = path.join(os.homedir(), "Library", "LaunchAgents", `${se
 const devScript = path.join(root, "scripts", "dev-server.mjs");
 const healthUrl = "http://127.0.0.1:3000/api/remote/status";
 const command = process.argv[2] || "status";
-const sourceEntries = [
-  "src",
-  "public",
-  "middleware.ts",
-  "eslint.config.mjs",
-  "package.json",
-  "package-lock.json",
-  "next.config.mjs",
-  "tsconfig.json",
-  "next-env.d.ts"
-];
+const readyUrl = "http://127.0.0.1:3000/api/remote/ready";
+const dependencyNames = ["opencli", "browserBridge", "ffmpeg", "chat", "image"];
+
 
 try {
-  await main();
+  if (["setup", "start", "stop", "dev", "deploy", "rollback"].includes(command)) await withServiceLock(() => ["deploy", "rollback"].includes(command) ? main() : withTaskProtection(main));
+  else await main();
 } catch (error) {
   console.error(`远程服务错误：${describeError(error)}`);
   process.exitCode = 1;
@@ -76,24 +70,12 @@ async function setup() {
 }
 
 async function start() {
-  if (!(await exists(path.join(currentLink, "server.js")))) {
-    throw new Error("尚无可运行版本，请先执行 npm run remote:deploy。");
-  }
-  if (!(await exists(launchAgentPath))) {
-    throw new Error("尚未安装 LaunchAgent，请先执行 npm run remote:setup。");
-  }
-
-  await assertNoActiveJobs();
-
-  await fs.promises.mkdir(stateRoot, { recursive: true });
-  await runNodeScript(devScript, ["stop"], { allowFailure: true });
-  await stopLaunchAgent();
-  await bootstrapLaunchAgent();
-
-  const healthy = await waitForHealth(30_000);
-  if (!healthy) {
-    throw new Error(`正式服务启动失败，请查看日志：${errorLogFile}`);
-  }
+  const release = await currentReleasePath();
+  if (!release || !(await exists(path.join(release, "server.js")))) throw new Error("尚无可运行版本，请先执行 npm run remote:deploy。");
+  if (!(await exists(launchAgentPath))) throw new Error("尚未安装 LaunchAgent，请先执行 npm run remote:setup。");
+  await switchToProduction();
+  await requireHealthy(release);
+  await reportDependencies(null);
   console.log("远程正式服务已启动：http://127.0.0.1:3000");
 }
 
@@ -103,7 +85,6 @@ async function stop() {
 }
 
 async function startDevelopment() {
-  await assertNoActiveJobs();
   await stopLaunchAgent();
   await runNodeScript(devScript, ["start"]);
   console.log("已切换为开发服务：http://127.0.0.1:3000");
@@ -131,61 +112,50 @@ async function status() {
 }
 
 async function deploy() {
-  if (!(await exists(launchAgentPath))) {
-    throw new Error("尚未完成远程环境配置，请先执行 npm run remote:setup。");
-  }
-  await assertNoActiveJobs();
-  const build = await buildRelease();
-  await assertNoActiveJobs();
-  const previousRelease = await currentReleasePath();
+  if (!(await exists(launchAgentPath))) throw new Error("尚未完成远程环境配置，请先执行 npm run remote:setup。");
+  const npm = capture("npm", ["--version"]);
+  if (!npm.ok) throw new Error("无法读取 npm 版本，请检查 Node.js 安装。");
+  const config = capture("npm", ["config", "list", "--json"]);
+  if (!config.ok) throw new Error("无法读取 npm 配置，未构建或切换。");
+  const toolchain = `${npm.stdout.trim()}\n${config.stdout}`;
+  const inputs = await releaseInputs(root, process.env, toolchain);
+  const candidate = await readCandidate(stateRoot, inputs.fingerprint);
+  const build = candidate || await buildRelease(inputs, toolchain);
+  if (candidate) console.log(`复用已验证候选：${build.buildId}（源码、依赖、配置及产物校验一致）`);
 
-  try {
-    await activateRelease(build.releaseRoot);
-    await switchToProduction();
-    if (!(await waitForHealth(30_000, build.buildId))) {
-      throw new Error("新版本启动后未在 30 秒内通过健康检查。");
-    }
-    await fs.promises.writeFile(path.join(build.releaseRoot, "HEALTHY"), `${new Date().toISOString()}\n`, "utf8");
-    await pruneReleases(2);
-    console.log(`发布成功：${build.buildId}`);
-    console.log("手机重新打开或点击版本提示即可使用新版本。");
-  } catch (error) {
-    if (previousRelease && await exists(path.join(previousRelease, "server.js"))) {
-      console.error(`发布失败，正在恢复上一版本：${path.basename(previousRelease)}`);
-      await activateRelease(previousRelease);
-      await switchToProduction();
-      if (!(await waitForHealth(30_000))) {
-        throw new Error(`${describeError(error)}；上一版本恢复后仍未通过健康检查，请查看 ${errorLogFile}`);
-      }
-    }
-    throw error;
+  // 资料库与运行任务会变化，不复用候选中的旧检查结果。
+  await timed("资料库检查", () => run("npm", ["run", "check:library"], {
+    cwd: root, env: { ...process.env, STYLE_LIBRARY_DIR: path.join(root, "style-library") }
+  }));
+  const latest = await releaseInputs(root, process.env, toolchain);
+  if (latest.fingerprint !== inputs.fingerprint) throw new Error("构建输入或配置已变化，已保留候选但未切换；再次发布将验证新内容。");
+  const previousRelease = await currentReleasePath();
+  if (previousRelease === build.releaseRoot && await waitForHealth(3_000, build.buildId)) {
+    await reportDependencies(null);
+    console.log(`当前已运行目标版本，无需重启：${build.buildId}`);
+    return;
   }
+  try { await assertNoActiveJobs(); }
+  catch (error) { throw new Error(`${describeError(error)}；候选 ${build.buildId} 已保留，条件恢复后再次运行 remote:deploy 可复用。`); }
+  const baseline = await fetchJson(`${healthUrl}?fresh=1`, 15_000);
+  if (!baseline.ok) console.warn("切换前外部能力状态不可用，无法判断依赖是否为既有异常。");
+  const recovery = previousRelease !== build.releaseRoot && await isHealthyRelease(previousRelease) ? previousRelease : await previousHealthyRelease(build.releaseRoot, await listReleases());
+  await withTaskProtection(() => activateWithRecovery(build.releaseRoot, recovery, baseline.ok ? baseline.data : null, "发布"));
+  try { await pruneReleases(previousRelease); }
+  catch (error) { console.warn(`版本已发布，旧产物清理失败：${describeError(error)}`); }
+  console.log(`发布成功：${build.buildId}`);
 }
 
 async function rollback() {
   await assertNoActiveJobs();
   const current = await currentReleasePath();
   const releases = await listReleases();
-  const target = releases.find((release) => release !== current && fs.existsSync(path.join(release, "HEALTHY")));
-  if (!target) throw new Error("没有可回退的历史版本。");
-
-  await activateRelease(target);
-  try {
-    await switchToProduction();
-    const build = await readReleaseBuild(target);
-    if (!(await waitForHealth(30_000, build?.buildId))) {
-      throw new Error("回退版本未通过健康检查。");
-    }
-    console.log(`已回退到：${path.basename(target)}`);
-  } catch (error) {
-    if (current) {
-      await activateRelease(current);
-      await switchToProduction();
-      const build = current ? await readReleaseBuild(current) : null;
-      await waitForHealth(30_000, build?.buildId);
-    }
-    throw error;
-  }
+  const target = await previousHealthyRelease(current, releases);
+  if (!target) throw new Error("没有可回退的健康版本。");
+  const baseline = await fetchJson(`${healthUrl}?fresh=1`, 15_000);
+  if (!baseline.ok) console.warn("回滚前外部能力状态不可用，无法判断依赖是否为既有异常。");
+  await withTaskProtection(() => activateWithRecovery(target, current, baseline.ok ? baseline.data : null, "回滚"));
+  console.log(`已回退到：${path.basename(target)}`);
 }
 
 async function serve() {
@@ -240,7 +210,7 @@ async function serve() {
   if (exit.code && exit.code !== 0) process.exitCode = exit.code;
 }
 
-async function buildRelease() {
+async function buildRelease(inputs, npmVersion) {
   const workRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), "style-workbench-remote-"));
   const stagingRoot = path.join(workRoot, "source");
   const gitCommit = capture("git", ["rev-parse", "--short", "HEAD"]).stdout.trim() || "unknown";
@@ -248,74 +218,55 @@ async function buildRelease() {
   const builtAt = new Date().toISOString();
   const buildId = makeBuildId(gitCommit, dirty, builtAt);
   const releaseRoot = path.join(releasesRoot, buildId);
-
   try {
     await fs.promises.mkdir(stagingRoot, { recursive: true });
     for (const entry of sourceEntries) {
       const source = path.join(root, entry);
-      if (await exists(source)) {
-        await fs.promises.cp(source, path.join(stagingRoot, entry), { recursive: true });
-      }
+      if (await exists(source)) await fs.promises.cp(source, path.join(stagingRoot, entry), { recursive: true });
     }
-
+    if (await hashEntries(stagingRoot, sourceEntries) !== inputs.sourceDigest) throw new Error("复制期间源码发生变化，请重新发布。");
+    const testLibrary = path.join(workRoot, "test-library");
+    await fs.promises.mkdir(testLibrary);
+    const env = { ...process.env, WORKSPACE_DEV_SANDBOX: "0", NEXT_TELEMETRY_DISABLED: "1",
+      STYLE_LIBRARY_DIR: testLibrary, APP_MODE: "workspace", APP_START_PATH: "/douyin-hotlist",
+      APP_BUILD_ID: buildId, APP_STARTED_AT: builtAt };
     console.log(`准备构建：${buildId}`);
-    await run("npm", ["ci", "--include=dev"], { cwd: stagingRoot });
-    await run("npm", ["run", "lint"], { cwd: stagingRoot });
-    await run("npm", ["run", "typecheck"], { cwd: stagingRoot });
-    await run("npm", ["run", "check:library"], {
-      cwd: root,
-      env: { ...process.env, STYLE_LIBRARY_DIR: path.join(root, "style-library") }
-    });
-    await run("npm", ["run", "build"], {
-      cwd: stagingRoot,
-      env: {
-        ...process.env,
-        NEXT_TELEMETRY_DISABLED: "1",
-        APP_MODE: "workspace",
-        APP_START_PATH: "/douyin-hotlist",
-        APP_BUILD_ID: buildId,
-        APP_STARTED_AT: builtAt
-      }
-    });
-
+    if (await exists(path.join(root, ".npmrc"))) await fs.promises.copyFile(path.join(root, ".npmrc"), path.join(stagingRoot, ".npmrc"));
+    await timed("安装依赖", () => run("npm", ["ci", "--include=dev", "--prefer-offline", "--no-audit", "--no-fund"], { cwd: stagingRoot, env }));
+    await fs.promises.rm(path.join(stagingRoot, ".npmrc"), { force: true });
+    await timed("测试", () => run("npm", ["test"], { cwd: stagingRoot, env: { ...env, NODE_ENV: "test" } }));
+    await timed("Lint", () => run("npm", ["run", "lint"], { cwd: stagingRoot, env }));
+    // Next build 校验完整类型及生成路由类型；lint 已覆盖 scripts/tests，不重复执行。
+    await timed("构建及类型检查", () => run("npm", ["run", "build", "--", "--no-lint"], { cwd: stagingRoot, env: { ...env, NODE_ENV: "production" } }));
+    if ((await releaseInputs(root, process.env, npmVersion)).fingerprint !== inputs.fingerprint) throw new Error("验证期间源码或配置发生变化，未生成可复用候选。");
     const standaloneRoot = path.join(stagingRoot, ".next", "standalone");
-    if (!(await exists(path.join(standaloneRoot, "server.js")))) {
-      throw new Error("构建完成但没有生成 .next/standalone/server.js。");
-    }
-
-    await fs.promises.rm(releaseRoot, { recursive: true, force: true });
-    await fs.promises.mkdir(releaseRoot, { recursive: true });
+    if (!(await exists(path.join(standaloneRoot, "server.js")))) throw new Error("构建完成但没有生成 .next/standalone/server.js。");
+    await fs.promises.mkdir(releasesRoot, { recursive: true });
+    await fs.promises.mkdir(releaseRoot, { recursive: false });
     await fs.promises.cp(standaloneRoot, releaseRoot, { recursive: true });
     await fs.promises.mkdir(path.join(releaseRoot, ".next"), { recursive: true });
-    await fs.promises.cp(
-      path.join(stagingRoot, ".next", "static"),
-      path.join(releaseRoot, ".next", "static"),
-      { recursive: true }
-    );
-    if (await exists(path.join(stagingRoot, "public"))) {
-      await fs.promises.cp(path.join(stagingRoot, "public"), path.join(releaseRoot, "public"), { recursive: true });
-    }
-    await fs.promises.writeFile(path.join(releaseRoot, "REMOTE_BUILD.json"), JSON.stringify({
-      buildId,
-      version: readPackageVersion(),
-      gitCommit,
-      dirty,
-      builtAt
-    }, null, 2), "utf8");
-
-    return { buildId, releaseRoot };
+    await fs.promises.cp(path.join(stagingRoot, ".next", "static"), path.join(releaseRoot, ".next", "static"), { recursive: true });
+    if (await exists(path.join(stagingRoot, "public"))) await fs.promises.cp(path.join(stagingRoot, "public"), path.join(releaseRoot, "public"), { recursive: true });
+    await writeJsonAtomic(path.join(releaseRoot, "REMOTE_BUILD.json"), {
+      buildId, version: readPackageVersion(), gitCommit, dirty, builtAt, fingerprint: inputs.fingerprint
+    });
+    const candidate = { schemaVersion: 1, buildId, fingerprint: inputs.fingerprint,
+      validation: "passed", validatedAt: new Date().toISOString(), artifactDigest: await hashArtifact(releaseRoot) };
+    await writeJsonAtomic(path.join(stateRoot, "candidate.json"), candidate);
+    return { ...candidate, releaseRoot };
   } finally {
     await fs.promises.rm(workRoot, { recursive: true, force: true });
   }
 }
 
 async function switchToProduction() {
-  await runNodeScript(devScript, ["stop"], { allowFailure: true });
+  await runNodeScript(devScript, ["stop"]);
   await stopLaunchAgent();
   if (!(await exists(launchAgentPath))) {
     await fs.promises.mkdir(path.dirname(launchAgentPath), { recursive: true });
     await fs.promises.writeFile(launchAgentPath, launchAgentPlist(), "utf8");
   }
+  if (await isTcpPortOpen(3000)) throw new Error("3000 端口仍被占用，已停止切换。");
   await bootstrapLaunchAgent();
 }
 
@@ -331,7 +282,7 @@ async function stopLaunchAgent() {
   const wasLoaded = capture("launchctl", ["print", launchTarget()]).ok;
   const result = capture("launchctl", ["bootout", launchTarget()]);
   if (!result.ok && !/Could not find service|No such process|not found/i.test(`${result.stdout}\n${result.stderr}`)) {
-    console.warn(`停止 LaunchAgent 时收到提示：${summarizeOutput(result.stderr || result.stdout)}`);
+    throw new Error(`停止 LaunchAgent 失败：${summarizeOutput(result.stderr || result.stdout)}`);
   }
   if (wasLoaded) await waitForLaunchAgentStopped(10_000);
 }
@@ -367,6 +318,8 @@ async function bootstrapLaunchAgent() {
   if (!bootstrap.ok && !/already loaded|service already loaded/i.test(`${bootstrap.stdout}\n${bootstrap.stderr}`)) {
     throw new Error(`加载 LaunchAgent 失败：${summarizeOutput(bootstrap.stderr || bootstrap.stdout)}`);
   }
+  // RunAtLoad 已随 bootstrap 启动，避免立即再杀掉刚启动的进程。
+  if (bootstrap.ok) return;
   const kickstart = capture("launchctl", ["kickstart", "-k", launchTarget()]);
   if (!kickstart.ok) {
     throw new Error(`启动 LaunchAgent 失败：${summarizeOutput(kickstart.stderr || kickstart.stdout)}`);
@@ -387,6 +340,10 @@ async function assertNoActiveJobs() {
       data.jobs.some((job) => !job || !["queued", "running", "completed", "failed", "cancelled", "interrupted"].includes(job.status))) {
     throw new Error("任务记录读取或恢复异常，无法确认完整任务状态，已停止切换，请先检查任务中心。");
   }
+  if (data.pendingCreations !== undefined && (!Number.isInteger(data.pendingCreations) || data.pendingCreations < 0 || data.pendingCreations > 0)) {
+    throw new Error("任务正在创建或状态无效，已停止切换。");
+  }
+  if (data.pendingCreations === undefined) console.warn("当前版本尚不支持切换期间暂停接收任务；本次切换仅能核对任务列表，请避免同时提交任务。");
   const active = data.jobs.filter((job) => ["queued", "running"].includes(job.status));
   if (active.length) {
     throw new Error(`当前有 ${active.length} 个运行或排队任务，请等待完成或手动停止后再继续。`);
@@ -394,16 +351,19 @@ async function assertNoActiveJobs() {
 }
 
 async function waitForHealth(timeoutMs, expectedBuildId) {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    const result = await fetchJson(healthUrl, 2_500);
-    const app = result.data?.app;
-    const buildMatches = !expectedBuildId || app?.buildId === expectedBuildId;
-    const modeMatches = app?.appMode === "workspace";
-    const serviceHealthy = app?.status !== "degraded";
-    const storageHealthy = result.data?.services?.storage?.status !== "unavailable";
-    if (result.ok && buildMatches && modeMatches && serviceHealthy && storageHealthy) return true;
-    await new Promise((resolve) => setTimeout(resolve, 500));
+  if (!expectedBuildId) throw new Error("缺少预期版本，无法验证服务。");
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const result = await fetchJson(readyUrl, Math.min(2_500, deadline - Date.now()));
+    if (result.ok && result.data?.ready === true && result.data.storage === "ok" &&
+        result.data.appMode === "workspace" && result.data.serviceMode === "production" && result.data.buildId === expectedBuildId) return true;
+    // 旧版无 ready 接口时仍支持回滚，但不能把错误响应或缺失字段当作健康。
+    if (result.status === 404) {
+      const legacy = await fetchJson(`${healthUrl}?fresh=1`, Math.max(1, Math.min(10_000, deadline - Date.now())));
+      if (legacy.ok && legacy.data?.app?.buildId === expectedBuildId && legacy.data.app.appMode === "workspace" &&
+          ["ok", "degraded"].includes(legacy.data.app.status) && legacy.data.services?.storage?.status === "ok") return true;
+    }
+    await new Promise(resolve => setTimeout(resolve, Math.min(500, Math.max(0, deadline - Date.now()))));
   }
   return false;
 }
@@ -415,8 +375,8 @@ async function fetchJson(url, timeoutMs) {
     const response = await fetch(url, { cache: "no-store", signal: controller.signal });
     const data = await response.json().catch(() => null);
     return response.ok
-      ? { ok: true, data }
-      : { ok: false, error: data?.error || `HTTP ${response.status}` };
+      ? { ok: true, data, status: response.status }
+      : { ok: false, status: response.status, error: data?.error || `HTTP ${response.status}` };
   } catch (error) {
     return { ok: false, error: describeError(error), connectionRefused: error?.cause?.code === "ECONNREFUSED" };
   } finally {
@@ -427,8 +387,9 @@ async function fetchJson(url, timeoutMs) {
 async function currentReleasePath() {
   try {
     return await fs.promises.realpath(currentLink);
-  } catch {
-    return "";
+  } catch (error) {
+    if (error.code === "ENOENT") return "";
+    throw error;
   }
 }
 
@@ -440,8 +401,9 @@ async function currentReleaseName() {
 async function readReleaseBuild(releaseRoot) {
   try {
     return JSON.parse(await fs.promises.readFile(path.join(releaseRoot, "REMOTE_BUILD.json"), "utf8"));
-  } catch {
-    return null;
+  } catch (error) {
+    if (error.code === "ENOENT" || error instanceof SyntaxError) return null;
+    throw error;
   }
 }
 
@@ -458,18 +420,13 @@ async function listReleases() {
   return withStats.sort((left, right) => right.mtimeMs - left.mtimeMs).map((entry) => entry.release);
 }
 
-async function pruneReleases(limit) {
+async function pruneReleases(previousRelease) {
   const current = await currentReleasePath();
   const releases = await listReleases();
-  const keep = new Set(
-    [current, ...releases.filter((release) => release !== current)]
-      .filter(Boolean)
-      .slice(0, limit)
-  );
+  const previous = previousRelease !== current && await isHealthyRelease(previousRelease) ? previousRelease : await previousHealthyRelease(current, releases);
+  const keep = new Set([current, previous]);
   for (const release of releases) {
-    if (!keep.has(release)) {
-      await fs.promises.rm(release, { recursive: true, force: true });
-    }
+    if (!keep.has(release)) await fs.promises.rm(release, { recursive: true, force: true });
   }
 }
 
@@ -596,4 +553,98 @@ function xmlEscape(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&apos;");
+}
+
+async function withServiceLock(action) {
+  if (process.platform !== "darwin") throw new Error("本机常驻服务当前只支持 macOS。");
+  await fs.promises.mkdir(stateRoot, { recursive: true });
+  const lock = path.join(stateRoot, "service.lock");
+  // macOS shlock 原子获取 PID 锁并识别已退出的持有者，避免并发发布/切换。
+  const acquired = capture("/usr/bin/shlock", ["-p", String(process.pid), "-f", lock]);
+  if (!acquired.ok) throw new Error("已有服务操作正在执行，或无法获取服务锁；请检查 .remote-server/service.lock。");
+  try { return await action(); }
+  finally { await fs.promises.rm(lock, { force: true }); }
+}
+
+async function timed(label, action) {
+  const started = Date.now();
+  try { return await action(); }
+  finally { console.log(`${label}耗时：${((Date.now() - started) / 1000).toFixed(1)} 秒`); }
+}
+
+async function requireHealthy(release) {
+  const build = await readReleaseBuild(release);
+  if (!build?.buildId || build.buildId !== path.basename(release)) throw new Error("发布元数据缺失或版本不匹配，无法验证服务。");
+  if (!await waitForHealth(30_000, build.buildId)) throw new Error(`版本 ${build.buildId} 未通过应用与存储检查，请查看 ${errorLogFile}`);
+}
+
+async function reportDependencies(baseline) {
+  async function check() {
+    const result = await fetchJson(`${healthUrl}?fresh=1`, 15_000);
+    if (!result.ok || !result.data?.services) throw new Error(`应用已启动，但运行状态接口验证失败：${result.error || "响应格式无效"}`);
+    const regressions = [];
+    for (const name of dependencyNames) {
+      const service = result.data.services[name];
+      if (!service || !["ok", "unconfigured", "unavailable"].includes(service.status)) throw new Error(`外部能力状态缺失：${name}`);
+      if (service.status !== "ok") {
+        console.warn(`外部能力 ${name}：${service.message || service.status}`);
+        // Chrome 生命周期独立于应用版本；离线明确告警，不靠重启应用恢复浏览器。
+        if (name !== "browserBridge" && baseline?.services?.[name]?.status === "ok") regressions.push(name);
+      }
+    }
+    return regressions;
+  }
+  if ((await check()).length) {
+    const regressions = await check();
+    if (regressions.length) throw new Error(`发布后外部能力持续出现新增异常：${regressions.join("、")}`);
+  }
+}
+
+async function isHealthyRelease(release) {
+  return Boolean(release && (await readReleaseBuild(release))?.buildId === path.basename(release) &&
+    await exists(path.join(release, "HEALTHY")) && !await exists(path.join(release, "FAILED")) &&
+    await exists(path.join(release, "server.js")));
+}
+
+async function previousHealthyRelease(current, releases) {
+  for (const release of releases) if (release !== current && await isHealthyRelease(release)) return release;
+  return null;
+}
+
+async function activateWithRecovery(target, previous, baseline, operation) {
+  try {
+    await activateRelease(target);
+    await switchToProduction();
+    await requireHealthy(target);
+    await reportDependencies(baseline);
+    await fs.promises.rm(path.join(target, "FAILED"), { force: true });
+    await fs.promises.writeFile(path.join(target, "HEALTHY"), `${new Date().toISOString()}\n`, "utf8");
+  } catch (error) {
+    try { await fs.promises.writeFile(path.join(target, "FAILED"), `${describeError(error)}\n`, "utf8"); }
+    catch (markerError) { console.error(`失败标记写入失败：${describeError(markerError)}`); }
+    if (!previous || previous === target || !await isHealthyRelease(previous)) {
+      throw new Error(`${operation}失败：${describeError(error)}；无可验证的上一健康版本，未执行恢复。`);
+    }
+    try {
+      await assertNoActiveJobs();
+      await activateRelease(previous);
+      await switchToProduction();
+      await requireHealthy(previous);
+      await reportDependencies(baseline);
+    } catch (recoveryError) {
+      throw new Error(`${operation}失败：${describeError(error)}；恢复失败：${describeError(recoveryError)}；请查看 ${errorLogFile}`);
+    }
+    throw new Error(`${operation}失败：${describeError(error)}；已恢复并验证上一版本 ${path.basename(previous)}。`);
+  }
+}
+
+async function withTaskProtection(action) {
+  const gate = path.join(stateRoot, "switching.json");
+  await writeJsonAtomic(gate, { pid: process.pid });
+  try {
+    await assertNoActiveJobs();
+    return await action();
+  } finally {
+    await fs.promises.rm(gate, { force: true });
+  }
 }

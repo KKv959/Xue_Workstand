@@ -29,6 +29,7 @@ test("本机正式服务可首次安装并复用已有版本，不要求额外�
         },
         launchAgentPlist: () => "local-service-config",
         exists: async () => hasRelease,
+        assertNoActiveJobs: async () => undefined,
         start: async () => { starts += 1; },
         console: { log: () => undefined }
       }) as () => Promise<void>;
@@ -48,7 +49,7 @@ function guard(response: unknown, portOpen = false) {
   return vm.runInNewContext(functions + "\nassertNoActiveJobs", {
     fetch: async () => { if (response instanceof Error) throw response; return response; },
     isTcpPortOpen: async () => portOpen,
-    AbortController, setTimeout, clearTimeout,
+    AbortController, setTimeout, clearTimeout, console: { warn: () => undefined },
     describeError: (error: Error) => error.message
   }) as () => Promise<void>;
 }

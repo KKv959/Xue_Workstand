@@ -200,9 +200,11 @@ export async function getBilibiliRelatedTopicComments(
     replyLimit?: number;
     excludedVideoIds?: string[];
     signal?: AbortSignal;
+    deadlineMs?: number;
+    concurrency?: number;
   } = {}
 ): Promise<BilibiliRelatedCommentResult> {
-  const queries = [...new Set((Array.isArray(query) ? query : [query]).map((value) => value.replace(/\s+/g, " ").trim()).filter(Boolean))].slice(0, 2);
+  const queries = [...new Set((Array.isArray(query) ? query : [query]).map((value) => value.replace(/\s+/g, " ").trim()).filter(Boolean))].slice(0, 3);
   const cleanQuery = queries.join(" / ");
   if (!cleanQuery) {
     return { query: "", videos: [], comments: [], commentSamples: [], replyCommentCount: 0, appliedMinViews: 0 };
@@ -249,7 +251,9 @@ export async function getBilibiliRelatedTopicComments(
     commentSamples: BilibiliRelatedCommentSample[];
     replyCommentCount: number;
   }>({
-    candidates, sourceTarget: videoLimit, signal: options.signal, budget: options.collectionBudget,
+    candidates, sourceTarget: videoLimit, signal: options.signal, budget: options.collectionBudget, deadlineMs: options.deadlineMs,
+    // B站评论走 HTTP，多开 2 路可明显缩短采集；触发风控会由 accessError 中止剩余视频。
+    concurrency: options.concurrency || 2,
     shouldStop: () => Boolean(accessError), count: (result) => result.commentSamples.length,
     read: async (video) => {
     if (accessError) {

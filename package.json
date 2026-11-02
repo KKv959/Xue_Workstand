@@ -21,9 +21,8 @@
     "remote:deploy": "node scripts/remote-server.mjs deploy",
     "remote:rollback": "node scripts/remote-server.mjs rollback",
     "build": "next build",
-    "package:release": "node scripts/package-release.mjs",
     "start": "next start",
-    "test": "tsx --import ./tests/helpers/pi-isolation.ts --test --test-concurrency=1 tests/**/*.test.ts",
+    "test": "tsx --test --test-concurrency=1 tests/**/*.test.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "metrics:pipeline": "node scripts/report-pipeline-metrics.mjs",
@@ -31,12 +30,9 @@
     "eval:writer:view": "promptfoo view",
     "check:library": "node scripts/check-library-consistency.mjs",
     "check:library:repair": "node scripts/check-library-consistency.mjs --repair",
-    "engagement:refresh-style": "node scripts/refresh-engagement-comment-benchmarks.mjs",
-    "pi": "pi"
+    "engagement:refresh-style": "node scripts/refresh-engagement-comment-benchmarks.mjs"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "1.1.0",
-    "@earendil-works/pi-coding-agent": "1.1.0",
     "@internationalized/date": "^3.12.4",
     "@tiptap/extension-mention": "^3.31.3",
     "@tiptap/pm": "^3.31.3",

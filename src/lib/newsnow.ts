@@ -1,3 +1,5 @@
+import type { NewsNowLayout } from "./newsnow-workbench-state";
+
 // 第一阶段仅支持与工作台同一台 Mac 上的 NewsNow。
 export const NEWSNOW_ORIGIN = "http://localhost:4444";
 export const NEWSNOW_URL = `${NEWSNOW_ORIGIN}/c/hottest`;
@@ -23,6 +25,7 @@ export type NewsNowWorkbenchCommand = {
   type: "connect" | "refresh" | "cancel" | "manage";
   tokens?: Record<string, string>;
   reducedMotion?: boolean;
+  layout?: string | null;
 };
 
 export type NewsNowWorkbenchMessage = {
@@ -30,4 +33,5 @@ export type NewsNowWorkbenchMessage = {
   version: typeof NEWSNOW_BRIDGE_VERSION;
   type: "state";
   state: NewsNowWorkbenchState;
+  layout?: NewsNowLayout;
 };

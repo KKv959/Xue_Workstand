@@ -6,12 +6,18 @@
 }
 
 .sidebar {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
   z-index: 20;
+  width: var(--sidebar-width);
   height: calc(var(--app-vh) * 100);
   padding: 18px 14px;
   border-right: 1px solid color-mix(in oklch, var(--line) 90%, white);
+}
+
+.main-content {
+  grid-column: 2;
 }
 
 .brand {

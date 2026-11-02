@@ -43,6 +43,8 @@ export function createNewsNowWorkbench(React: typeof ReactType, api: NewsNowApi)
     const drag = useRef<DragSession | null>(null);
     const refreshController = useRef<AbortController | null>(null);
     const parentOrigin = useRef("");
+    const parentStorage = useRef(false);
+    const layoutConnected = useRef(false);
     const reducedMotion = useRef(window.matchMedia("(prefers-reduced-motion: reduce)").matches);
     const alive = useRef(true);
     layoutRef.current = layout;
@@ -64,8 +66,9 @@ export function createNewsNowWorkbench(React: typeof ReactType, api: NewsNowApi)
       layoutRef.current = next;
       setLayout(next);
       if (persist) {
+        layoutConnected.current = true;
         try {
-          window.localStorage.setItem(NEWSNOW_LAYOUT_KEY, JSON.stringify(next));
+          if (!parentStorage.current) window.localStorage.setItem(NEWSNOW_LAYOUT_KEY, JSON.stringify(next));
           setState(current => ({ ...current, storageError: "" }));
         } catch {
           setState(current => ({ ...current, storageError: "浏览器未能保存卡片偏好；本次操作仍然有效，重新打开后可能恢复原布局。" }));
@@ -238,8 +241,7 @@ export function createNewsNowWorkbench(React: typeof ReactType, api: NewsNowApi)
       setState(current => ({ ...current, refreshing: false, completed, failures, message: controller.signal.aborted ? `已停止刷新，完成 ${completed}/${sourceIds.length}` : failures.length ? `刷新完成：${sourceIds.length - failures.length} 个成功，${failures.length} 个失败，旧内容仍可阅读。` : `全部 ${sourceIds.length} 个来源已刷新` }));
     }, []);
 
-    // Restore before mounting cards: loading saved preferences is not a user reorder.
-    // Keep this independent of the optional referrer used by the parent bridge.
+    // Read legacy preferences first; mount cards only after the workbench restores its saved layout.
     useLayoutEffect(() => {
       try {
         const saved = readNewsNowLayout(localStorage.getItem(NEWSNOW_LAYOUT_KEY), sourceIds);
@@ -248,7 +250,6 @@ export function createNewsNowWorkbench(React: typeof ReactType, api: NewsNowApi)
       } catch (error) {
         setState(current => ({ ...current, storageError: `无法读取卡片偏好，本次暂用默认布局。${error instanceof Error ? error.message : "请检查浏览器存储权限。"}` }));
       }
-      setLayoutReady(true);
     }, []);
 
     useEffect(() => {
@@ -271,6 +272,19 @@ export function createNewsNowWorkbench(React: typeof ReactType, api: NewsNowApi)
         }
         if (event.origin !== parentOrigin.current) return;
         if (message.type === "connect") {
+          if (message.layout === null || typeof message.layout === "string") {
+            parentStorage.current = true;
+            try {
+              // Adopt old iframe preferences once, then let the first-party workbench own persistence.
+              if (message.layout !== null) changeLayout(readNewsNowLayout(message.layout, sourceIds), false);
+              layoutConnected.current = true;
+              setState(current => ({ ...current, storageError: "" }));
+            } catch (error) {
+              layoutConnected.current = false;
+              setState(current => ({ ...current, storageError: `无法恢复工作台卡片偏好。${error instanceof Error ? error.message : "请检查保存的布局。"}` }));
+            }
+          }
+          setLayoutReady(true);
           if (typeof message.reducedMotion === "boolean") reducedMotion.current = message.reducedMotion;
           if (message.tokens && typeof message.tokens === "object") {
             for (const [key, value] of Object.entries(message.tokens)) if (/^--[a-z-]+$/.test(key) && typeof value === "string") document.documentElement.style.setProperty(key, value);
@@ -282,7 +296,7 @@ export function createNewsNowWorkbench(React: typeof ReactType, api: NewsNowApi)
       };
       const escape = (event: KeyboardEvent) => { if (event.key === "Escape" && drag.current) { event.preventDefault(); finishDrag(true); } };
       const storage = (event: StorageEvent) => {
-        if (event.key !== NEWSNOW_LAYOUT_KEY) return;
+        if (parentStorage.current || event.key !== NEWSNOW_LAYOUT_KEY) return;
         try { changeLayout(readNewsNowLayout(event.newValue, sourceIds), false); }
         catch (error) { setState(current => ({ ...current, storageError: error instanceof Error ? error.message : "卡片偏好同步失败。" })); }
       };
@@ -301,8 +315,9 @@ export function createNewsNowWorkbench(React: typeof ReactType, api: NewsNowApi)
     }, [changeLayout, finishDrag, refreshAll]);
 
     useEffect(() => {
-      if (parentOrigin.current) window.parent.postMessage({ channel: NEWSNOW_BRIDGE_CHANNEL, version: NEWSNOW_BRIDGE_VERSION, type: "state", state: { ...state, hidden: layout.hidden.length } }, parentOrigin.current);
-    }, [state, layout.hidden.length]);
+      if (parentOrigin.current) window.parent.postMessage({ channel: NEWSNOW_BRIDGE_CHANNEL, version: NEWSNOW_BRIDGE_VERSION, type: "state", state: { ...state, hidden: layout.hidden.length },
+        ...(parentStorage.current && layoutConnected.current && !drag.current ? { layout } : {}) }, parentOrigin.current);
+    }, [state, layout]);
 
     const visible = layoutReady ? layout.order.filter(id => !layout.hidden.includes(id)) : [];
     return <>

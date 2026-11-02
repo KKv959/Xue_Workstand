@@ -65,13 +65,14 @@ test("一个视频命中人机评论源后整组评论全部隔离", () => {
   );
 });
 
-test("B站评论调研只采 B站，抖音保留双平台采集", () => {
+test("评论调研同时采两个平台，目标平台来源更多", () => {
   assert.deepEqual(buildPlatformResearchTasks("苹果折叠屏", "bilibili"), [
-    { source: "bilibili", query: "苹果折叠屏", videoLimit: 2 }
+    { source: "bilibili", query: "苹果折叠屏", videoLimit: 6 },
+    { source: "douyin", query: "苹果折叠屏", videoLimit: 3 }
   ]);
   assert.deepEqual(buildPlatformResearchTasks("苹果折叠屏", "douyin"), [
-    { source: "douyin", query: "苹果折叠屏", videoLimit: 2 },
-    { source: "bilibili", query: "苹果折叠屏", videoLimit: 2 }
+    { source: "douyin", query: "苹果折叠屏", videoLimit: 6 },
+    { source: "bilibili", query: "苹果折叠屏", videoLimit: 3 }
   ]);
 });
 
@@ -101,7 +102,7 @@ test("关键词计划保留 AI 的语义表达、顺序和数量，不按原文�
 });
 
 test("计划只拒绝错误格式和超过执行上限，不静默截断", () => {
-  for (const value of [{ queries: [] }, { queries: [42] }, { queries: [""] }, { queries: "关键词" }, { queries: Array(3).fill("词") }]) {
+  for (const value of [{ queries: [] }, { queries: [42] }, { queries: [""] }, { queries: "关键词" }, { queries: Array(4).fill("词") }]) {
     assert.throws(() => normalizeEngagementResearchPlan(value));
   }
 });

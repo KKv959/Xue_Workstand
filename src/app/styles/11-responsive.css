@@ -34,6 +34,10 @@
 }
 
 @media (max-width: 1180px) {
+  .sidebar {
+    width: var(--sidebar-width-compact);
+  }
+
   .app-shell {
     grid-template-columns: var(--sidebar-width-compact) minmax(0, 1fr);
   }
@@ -66,6 +70,7 @@
   }
 
   .main-content {
+    grid-column: 1;
     padding-bottom: calc(74px + env(safe-area-inset-bottom));
   }
 

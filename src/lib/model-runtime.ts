@@ -552,7 +552,7 @@ export function classifyModelFailure(error: unknown): {
     return { kind: "endpoint", userMessage: "中转站当前分组没有该模型的可用渠道，请检查 API Key 分组和模型渠道，或切换已验证可用的模型", rawMessage: compactErrorMessage(message) };
   }
   if (/\bmodel_not_found\b/i.test(message)) {
-    return { kind: "endpoint", userMessage: "当前节点不支持所选模型，请检查原中转站模型配置，或在 Pi 终端选择可用型号", rawMessage: compactErrorMessage(message) };
+    return { kind: "endpoint", userMessage: "当前节点不支持所选模型，请检查中转站模型配置，或切换已配置的中转模型", rawMessage: compactErrorMessage(message) };
   }
   if (originalError instanceof ModelHttpError && (originalError.status === 400 || originalError.status === 422)) {
     return { kind: "endpoint", userMessage: "对话模型请求参数或模型配置不兼容，请检查节点配置", rawMessage: compactErrorMessage(message) };

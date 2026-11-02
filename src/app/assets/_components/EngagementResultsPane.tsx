@@ -9,6 +9,7 @@ import type { EngagementRecord } from "@/lib/types";
 
 type EngagementResultsPaneProps = {
   busy: BusyState;
+  isGenerating: boolean;
   includeDanmaku: boolean;
   previewComments: NonNullable<EngagementRecord["comments"]>["items"];
   resultRecord: EngagementRecord | null;
@@ -19,6 +20,7 @@ type EngagementResultsPaneProps = {
 
 export function EngagementResultsPane({
   busy,
+  isGenerating,
   includeDanmaku,
   previewComments,
   resultRecord,
@@ -44,7 +46,6 @@ export function EngagementResultsPane({
   const requestedDanmakuCount = resultRecord?.danmaku?.requestedCount || (resultRecord?.options.includeDanmaku ? resultRecord.options.danmakuCount : 0);
   const actualDanmakuCount = resultRecord?.danmaku?.items.length || 0;
   const missingDanmakuCount = Math.max(requestedDanmakuCount - actualDanmakuCount, 0);
-  const isGenerating = busy === "generate";
   const reusableCommentKeys = new Set((relatedResearch?.reusableComments || []).map(commentDisplayKey));
   const commentOrigins = activeComments.map((item) => {
     if (item.origin) return item.origin;

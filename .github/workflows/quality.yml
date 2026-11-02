@@ -25,6 +25,6 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run lint
-      - run: npm run typecheck
       - run: npm run check:library
-      - run: npm run build
+      # build includes TypeScript and generated route validation; lint ran above.
+      - run: npm run build -- --no-lint

@@ -95,7 +95,7 @@ type DetailReadOptions = {
   includeStyle?: boolean;
 };
 
-export type EngagementCacheKind = "source" | "brief" | "research" | "samples" | "pipeline" | "model-calls";
+export type EngagementCacheKind = "source" | "brief" | "research" | "samples" | "pipeline" | "prefilter" | "model-calls";
 
 export type AccountStyleMeta = {
   sampleHash: string;

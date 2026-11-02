@@ -213,7 +213,7 @@ function formatGrossMarginError(error: unknown, fallbackMessage: string) {
   }
 
   if (isMissingOpenCliError(error)) {
-    return "未检测到 opencli。数据维护 / 数据监控页面可以继续使用，但刷新 B站/抖音数据前请先运行 install-deps.cmd 安装 opencli。";
+    return "未检测到 opencli。数据维护 / 数据监控页面可以继续使用；如需刷新 B站/抖音数据，请先安装 opencli 并运行 opencli doctor 检查浏览器连接。";
   }
 
   return error instanceof Error ? error.message : fallbackMessage;

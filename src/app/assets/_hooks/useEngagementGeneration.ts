@@ -5,7 +5,6 @@ import { getEngagementRecord } from "@/lib/client";
 import { engagementSourceKey } from "@/lib/job-scope";
 import { extractFirstLinkFromInput } from "@/lib/platform-links";
 import type { EngagementRecord, JobRecord, JobStartInput, Platform } from "@/lib/types";
-import type { BusyState } from "../_components/asset-view-utils";
 
 type EngagementJobInput = Extract<JobStartInput, { kind: "engagement" }>["input"];
 
@@ -20,14 +19,11 @@ type UseEngagementGenerationInput = {
   recentJobs: JobRecord[];
   sourceInput: string;
   startTask: (input: JobStartInput) => Promise<JobRecord>;
-  busy: BusyState;
-  setBusy: Dispatch<SetStateAction<BusyState>>;
   setNotice: Dispatch<SetStateAction<string>>;
 };
 
 export function useEngagementGeneration({
   activeJobs,
-  busy,
   commentCount,
   danmakuCount,
   includeComments,
@@ -35,14 +31,22 @@ export function useEngagementGeneration({
   onRecordCompleted,
   targetPlatform,
   recentJobs,
-  setBusy,
   setNotice,
   sourceInput,
   startTask
 }: UseEngagementGenerationInput) {
-  const [resultRecord, setResultRecord] = useState<EngagementRecord | null>(null);
+  const [resultRecord, updateResultRecord] = useState<EngagementRecord | null>(null);
+  const selectedRecordRef = useRef<EngagementRecord | null>(null);
+  const setResultRecord = useCallback((record: EngagementRecord | null) => {
+    selectedRecordRef.current = record;
+    updateResultRecord(record);
+  }, []);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const visibleJobIdRef = useRef("");
   const [activeEngagementJobId, setActiveEngagementJobId] = useState("");
   const handledEngagementJobIdsRef = useRef(new Set<string>());
+  const backgroundJobIdsRef = useRef(new Set<string>());
   const resolvingEngagementJobIdsRef = useRef(new Set<string>());
   const trimmedSource = sourceInput.trim();
   const activeTitle = resultRecord?.title || trimmedSource.slice(0, 32) || "评论生成";
@@ -75,8 +79,11 @@ export function useEngagementGeneration({
     [activeEngagementJobId, currentInput, engagementJobCandidates]
   );
   const isGenerating = Boolean(engagementJob && (engagementJob.status === "queued" || engagementJob.status === "running"));
-  const canGenerate = !busy && !isGenerating && (includeComments || includeDanmaku) && Boolean(trimmedSource);
-  const previewResult = isGenerating
+  const canGenerate = !isSubmitting && !isGenerating && (includeComments || includeDanmaku) && Boolean(trimmedSource);
+  const isViewingGeneration = isGenerating && (!resultRecord
+    || engagementJob?.scope?.engagementRecordId === resultRecord.id
+    || engagementJob?.resultRef?.id === resultRecord.id);
+  const previewResult = isViewingGeneration
     ? engagementJob?.result as { previewComments?: NonNullable<EngagementRecord["comments"]>["items"] } | undefined
     : undefined;
   const generationProgress = isGenerating && engagementJob
@@ -92,26 +99,34 @@ export function useEngagementGeneration({
     : runningPreviewComments;
 
   useEffect(() => {
+    visibleJobIdRef.current = engagementJob?.id || "";
+    return () => { visibleJobIdRef.current = ""; };
+  }, [engagementJob?.id]);
+
+  useEffect(() => {
     if (!engagementJob) return;
     setActiveEngagementJobId(engagementJob.id);
     if (engagementJob.status === "running" || engagementJob.status === "queued") {
-      setBusy("generate");
       return;
     }
     if (handledEngagementJobIdsRef.current.has(engagementJob.id)) return;
-    setBusy("");
     if (engagementJob.status === "completed") {
       const result = engagementJob.result as { record?: EngagementRecord } | undefined;
       if (result?.record) {
         handledEngagementJobIdsRef.current.add(engagementJob.id);
-        setResultRecord(result.record);
+        if (!selectedRecordRef.current || selectedRecordRef.current.id === result.record.id) {
+          setResultRecord(result.record);
+        }
         onRecordCompleted(result.record);
         setNotice(buildSuccessMessage(result.record));
       } else if (engagementJob.resultRef?.id && !resolvingEngagementJobIdsRef.current.has(engagementJob.id)) {
         resolvingEngagementJobIdsRef.current.add(engagementJob.id);
         void getEngagementRecord(engagementJob.resultRef.id, { fresh: true }).then((record) => {
           handledEngagementJobIdsRef.current.add(engagementJob.id);
-          setResultRecord(record);
+          if (visibleJobIdRef.current === engagementJob.id
+            && (!selectedRecordRef.current || selectedRecordRef.current.id === record.id)) {
+            setResultRecord(record);
+          }
           onRecordCompleted(record);
           setNotice(buildSuccessMessage(record));
         }).catch((error) => {
@@ -126,9 +141,36 @@ export function useEngagementGeneration({
     if (engagementJob.status === "failed") {
       setNotice(engagementJob.error || "生成评论失败，请检查输入和模型配置。");
     }
-  }, [engagementJob, onRecordCompleted, setBusy, setNotice]);
+  }, [engagementJob, onRecordCompleted, setResultRecord, setNotice]);
+
+  // Keep completed background work in history without changing the selected result.
+  useEffect(() => {
+    for (const job of engagementJobCandidates) {
+      if (isActiveJob(job)) backgroundJobIdsRef.current.add(job.id);
+      if (job.id === engagementJob?.id || job.status !== "completed"
+        || !backgroundJobIdsRef.current.has(job.id)
+        || handledEngagementJobIdsRef.current.has(job.id)
+        || resolvingEngagementJobIdsRef.current.has(job.id)) continue;
+      const result = job.result as { record?: EngagementRecord } | undefined;
+      if (result?.record) {
+        handledEngagementJobIdsRef.current.add(job.id);
+        onRecordCompleted(result.record);
+      } else if (job.resultRef?.id) {
+        resolvingEngagementJobIdsRef.current.add(job.id);
+        void getEngagementRecord(job.resultRef.id, { fresh: true }).then((record) => {
+          handledEngagementJobIdsRef.current.add(job.id);
+          onRecordCompleted(record);
+        }).catch((error) => {
+          setNotice(error instanceof Error ? error.message : "后台任务已完成，但读取评论结果失败。");
+        }).finally(() => {
+          resolvingEngagementJobIdsRef.current.delete(job.id);
+        });
+      }
+    }
+  }, [engagementJob?.id, engagementJobCandidates, onRecordCompleted, setNotice]);
 
   const handleGenerate = useCallback(async () => {
+    if (submittingRef.current || !canGenerate) return;
     if (!includeComments && !includeDanmaku) {
       setNotice("请至少选择评论或弹幕。");
       return;
@@ -148,7 +190,8 @@ export function useEngagementGeneration({
       targetPlatform
     });
 
-    setBusy("generate");
+    submittingRef.current = true;
+    setIsSubmitting(true);
     setNotice("");
     setResultRecord(null);
     try {
@@ -161,15 +204,17 @@ export function useEngagementGeneration({
       });
       setActiveEngagementJobId(job.id);
     } catch (err) {
-      setBusy("");
       setNotice(err instanceof Error ? err.message : "生成评论失败，请检查输入和模型配置。");
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
     }
   }, [
+    canGenerate,
     commentCount,
     danmakuCount,
     includeComments,
     includeDanmaku,
-    setBusy,
     setNotice,
     setResultRecord,
     startTask,
@@ -179,6 +224,9 @@ export function useEngagementGeneration({
 
   return {
     canGenerate,
+    isSubmitting,
+    isGenerating,
+    isViewingGeneration,
     activeTitle,
     generationProgress,
     handleGenerate,
@@ -242,7 +290,7 @@ export function findTaskJob(
   kind: JobRecord["kind"],
   matchesScope: (job: JobRecord) => boolean
 ) {
-  const tracked = jobs.find((job) => job.id === jobId && job.kind === kind);
+  const tracked = jobs.find((job) => job.id === jobId && job.kind === kind && matchesScope(job));
   if (tracked && isActiveJob(tracked)) return tracked;
   const latest = jobs.filter((job) => job.kind === kind && matchesScope(job)).sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
   return jobs.find((job) => job.kind === kind && isActiveJob(job) && matchesScope(job))

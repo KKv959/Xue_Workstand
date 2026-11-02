@@ -7,7 +7,7 @@ import path from "node:path";
 import { generateEngagement } from "../src/lib/engagement";
 import { buildEngagementCommentResearch } from "../src/lib/engagement-research";
 
-test("B站正式评论入口、恢复和采集失败均不请求抖音", async () => {
+test("B站正式评论入口会保留抖音跨平台参考，单个平台失败不阻断生成", async () => {
   const env = { ...process.env };
   const root = await mkdtemp(path.join(tmpdir(), "engagement-bilibili-platform-"));
   const eventFile = path.join(root, "events.jsonl");
@@ -20,7 +20,6 @@ test("B站正式评论入口、恢复和采集失败均不请求抖音", async (
     const planning = body.messages[0].content.includes("搜索计划");
     if (!planning) {
       assert.match(body.messages[1].content, /B站参考句子/);
-      assert.doesNotMatch(body.messages[1].content, /抖音参考句子/);
     }
     const content = JSON.stringify(planning
       ? { queries: ["折叠手机"], sources: [{ query: "折叠手机", videoType: "实机体验", discussion: "使用取舍" }] }
@@ -50,23 +49,24 @@ test("B站正式评论入口、恢复和采集失败均不请求抖音", async (
     };
     const result = await generateEngagement(input, { checkpointId: "bilibili-only" });
     assert.equal(result.record.comments?.items.length, 3);
-    assert.deepEqual(result.record.comments.diagnostics?.relatedResearch?.sourceStats?.map((row) => row.source), ["bilibili"]);
-    assert.equal(result.record.comments.diagnostics?.relatedResearch?.capturedCommentCount, 200);
+    assert.deepEqual(result.record.comments.diagnostics?.relatedResearch?.sourceStats?.map((row) => row.source), ["bilibili", "douyin"]);
+    assert.equal(result.record.comments.diagnostics?.relatedResearch?.capturedCommentCount, 150);
     const collected = await events();
     assert.ok(collected.length > 0);
-    assert.ok(collected.every((row) => row.platform === "bilibili"));
+    assert.deepEqual([...new Set(collected.map((row) => row.platform))].sort(), ["bilibili", "douyin"]);
     const callsBeforeResume = modelCalls;
     assert.equal((await generateEngagement(input, { checkpointId: "bilibili-only" })).record.id, result.record.id);
     assert.equal(modelCalls, callsBeforeResume);
     assert.deepEqual(await events(), collected);
 
     process.env.COMMENT_TEST_FAIL_PLATFORM = "bilibili";
-    await assert.rejects(buildEngagementCommentResearch({
+    const partial = await buildEngagementCommentResearch({
       fullText: "另一份折叠手机素材", summary: "", topic: "折叠手机", subjects: [], keyFacts: [],
       discussionAngles: [], skepticalAngles: [], anchorTerms: []
-    }, { platform: "bilibili" }), /B站调研没有抓到/);
+    }, { platform: "bilibili" });
+    assert.equal(partial.sourceStats.find((row) => row.source === "bilibili")?.status, "failed");
     assert.ok((await events()).length > collected.length);
-    assert.ok((await events()).every((row) => row.platform === "bilibili"), "B站失败时也不能转采抖音");
+    assert.ok((await events()).some((row) => row.platform === "douyin"), "B站失败时仍保留抖音跨平台参考");
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));

@@ -13,6 +13,15 @@
 
 提示词集中在 `src/lib/writer-prompts.ts`；本地选取原文在 `src/lib/style-reference.ts`。模型与任务中心、存储、API 返回结构保持兼容。
 
+## 稿件与资料契约
+
+- 多选风格卡时每卡独立成稿，只保存自身风格引用；有界并发处理，各稿失败或取消不覆盖其他已完成稿件。
+- 初稿、续改和手动编辑保存为不可变版本链，保留父稿及版本关系；续改沿用该稿风格快照和父稿资料，不重新转写、抓取支持文档或联网。
+- `originalSourceInput` 保留输入框原貌供恢复；模型使用解析后的 `input` / `sourceDigest`，不把内部素材包装当作用户原始输入。
+- 支持文档经 `src/lib/support-documents.ts` 读取，正文失败显式报错；联网能力和资料复用详见[写作联网检索](api/writer-research.md)。
+
+现有回归入口：`tests/writer-context.test.ts`（独立风格、快照、续改复用及部分成功），`tests/writer-editing-safety.test.ts`（编辑与取消时保留稿件和原始输入），`tests/foundation.test.ts`（原始输入持久化、历史版本与支持文档失败）。存储校验与恢复见[存储模块](../src/lib/storage/README.md)。
+
 ## GitHub 参考
 
 2026-10-27 查阅：

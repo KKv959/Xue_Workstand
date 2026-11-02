@@ -213,6 +213,7 @@ function WriterPageContent() {
   }, []);
 
   const {
+    isSubmitting,
     captureEditingState,
     canGenerate,
     canRevise,
@@ -284,8 +285,9 @@ function WriterPageContent() {
   const canSubmitRevision = canRevise && selectedRevisionKeys.length > 0;
   const currentVersions = historyDrafts.filter(item => (item.version?.sessionId || item.id) === (lastDraftVersion?.sessionId || lastDraftId))
     .sort((a, b) => (b.version?.revision || 1) - (a.version?.revision || 1));
+  const navigationBusy = (Boolean(busy) && busy !== "generate") || isSubmitting;
   const selectVersion = async (id: string) => {
-    if (busy || id === lastDraftId) return;
+    if (navigationBusy || id === lastDraftId) return;
     setBusy("load-version");
     try {
       const draft = await getDraft(id);
@@ -353,7 +355,7 @@ function WriterPageContent() {
   }, [selectGeneratedVariant]);
 
   const handleStartNewTask = useCallback(() => {
-    if (busy || sourceImporting) return;
+    if (navigationBusy || sourceImporting) return;
     if ((hasTaskInput || lastContent || hasAnyUnsavedChanges) && !window.confirm("新建任务会清空当前输入；已经保存的版本仍会保留。继续吗？")) {
       return;
     }
@@ -371,7 +373,7 @@ function WriterPageContent() {
 
     const params = createWriterReferenceParams(selectedStyleRefs, "topic");
     router.replace(`/writer?${params.toString()}`, { scroll: false });
-  }, [busy, clearDraftResult, hasAnyUnsavedChanges, hasTaskInput, lastContent, router, selectedStyleRefs, sourceImporting]);
+  }, [navigationBusy, clearDraftResult, hasAnyUnsavedChanges, hasTaskInput, lastContent, router, selectedStyleRefs, sourceImporting]);
 
   const handleSourceFiles = useCallback(async (files: File[]) => {
     if (!files.length || sourceImporting) return;
@@ -558,10 +560,10 @@ function WriterPageContent() {
               <div className="section-title-row writer-setup-toolbar">
                 <h2>写作设定</h2>
                 <div className="writer-session-tools" role="group" aria-label="稿件管理">
-                  <button className="btn ghost" disabled={Boolean(busy) || sourceImporting} onClick={() => { setHistorySessionId(""); setHistoryOpen(true); }} type="button" aria-haspopup="dialog">
+                  <button className="btn ghost" disabled={navigationBusy || sourceImporting} onClick={() => { setHistorySessionId(""); setHistoryOpen(true); }} type="button" aria-haspopup="dialog">
                     <History aria-hidden="true" size={16} />历史
                   </button>
-                  <button className="btn" disabled={Boolean(busy) || sourceImporting} onClick={handleStartNewTask} type="button">
+                  <button className="btn" disabled={navigationBusy || sourceImporting} onClick={handleStartNewTask} type="button">
                     <Plus aria-hidden="true" size={16} />新建
                   </button>
                 </div>
@@ -744,7 +746,7 @@ function WriterPageContent() {
               <div className="section-title-row writer-document-toolbar">
                 <div className="writer-result-title">
                   <h2>当前稿件</h2>
-                  {lastDraftId ? <WriterActionMenu label="选择稿件版本" text={`V${lastDraftVersion?.revision || 1}`} icon={<ChevronDown size={12} aria-hidden="true" />} disabled={Boolean(busy)}>
+                  {lastDraftId ? <WriterActionMenu label="选择稿件版本" text={`V${lastDraftVersion?.revision || 1}`} icon={<ChevronDown size={12} aria-hidden="true" />} disabled={navigationBusy}>
                     {currentVersions.map(version => <button key={version.id} type="button" aria-current={version.id === lastDraftId ? "true" : undefined} onClick={() => void selectVersion(version.id)}>
                       <span className="writer-version-option"><strong>V{version.version?.revision || 1}{version.id === lastDraftId ? " · 当前" : ""}</strong><small>{version.version?.instruction || "初稿"}</small></span>
                     </button>)}
@@ -940,7 +942,7 @@ function WriterPageContent() {
           onRenameDraft={handleRenameHistoryDraft}
           selectedDraftId={lastDraftId}
           onSelectDraft={async (draft) => {
-            if (busy) return false;
+            if (navigationBusy) return false;
             const restoreOutput = captureEditingState();
             const previousUrl = `/writer?${searchParams.toString()}`;
             await handleSelectHistoryDraft(draft);

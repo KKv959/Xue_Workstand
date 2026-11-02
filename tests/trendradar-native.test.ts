@@ -77,8 +77,8 @@ test("Docker 原生引擎：真实采集、AI筛选、五板块HTML、持久化�
   });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   const address = server.address(); assert.ok(address && typeof address === "object");
-  for (const key of Object.keys(process.env)) if (/^(CHAT_|OPENAI_|FHL_|PI_)/.test(key)) delete process.env[key];
-  Object.assign(process.env, { STYLE_LIBRARY_DIR: root, PI_ENABLED: "0", CHAT_API_KEY: "test", CHAT_MODEL: "test", CHAT_BASE_URL: `http://127.0.0.1:${address.port}/v1`, CHAT_WIRE_API: "chat_completions" });
+  for (const key of Object.keys(process.env)) if (/^(CHAT_|OPENAI_|FHL_)/.test(key)) delete process.env[key];
+  Object.assign(process.env, { STYLE_LIBRARY_DIR: root, CHAT_API_KEY: "test", CHAT_MODEL: "test", CHAT_BASE_URL: `http://127.0.0.1:${address.port}/v1`, CHAT_WIRE_API: "chat_completions" });
   try {
     const report = await runTrendRadarNative(trendRadarSettingsSchema.parse({}), { onProgress: async progress => { console.log(progress.message); } });
     assert.equal(report.engineVersion, "6.10.0");

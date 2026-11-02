@@ -1,4 +1,5 @@
 import { syncMustFire } from "./gross-margin-must-fire";
+import { withJobAdmission } from "./service-transition";
 import { runTrendRadarNative } from "./trendradar-native";
 import { trendRadarSettingsSchema } from "./trendradar-native-types";
 import { assistImagePrompt } from "./image-prompt-assist";
@@ -471,6 +472,10 @@ export async function getJob(jobId: string) {
 }
 
 export async function createJob(input: JobStartInput) {
+  return withJobAdmission(() => createAdmittedJob(input));
+}
+
+async function createAdmittedJob(input: JobStartInput) {
   input = startJobSchema.parse(input);
   assertJobKindAllowedForAppMode(input.kind);
   await ensureInitialized();

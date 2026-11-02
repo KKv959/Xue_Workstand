@@ -7,12 +7,12 @@ import path from "node:path";
 import { streamResponseText, streamResponseTextWithFallback, completePreparedWriteCopy } from "../src/lib/ai";
 import { classifyModelFailure, ModelHttpError } from "../src/lib/model-runtime";
 
-test("Pi 额度错误不覆盖最终中转站的渠道错误", () => {
+test("中转站额度错误不覆盖最终中转站的渠道错误", () => {
   const transport = new ModelHttpError(503, JSON.stringify({ error: {
     code: "model_not_found", message: "No available channel for model gpt-6-astra under group codex-稳定"
   } }));
   const relay = new Error("中转站请求失败", { cause: transport });
-  const combined = new Error("Pi 额度不足或限流；原中转站兜底也失败", { cause: relay });
+  const combined = new Error("备用节点额度不足或限流；中转站兜底也失败", { cause: relay });
   for (const error of [transport, combined, Object.assign(new Error("流式失败"), { originalError: combined })]) {
     const failure = classifyModelFailure(error);
     assert.equal(failure.kind, "endpoint");

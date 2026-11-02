@@ -34,13 +34,18 @@ export function isNewsNowWorkbenchMessage(value: unknown): value is NewsNowWorkb
   if (!value || typeof value !== "object") return false;
   const message = value as Partial<NewsNowWorkbenchMessage>;
   const state = message.state;
+  const layout = message.layout;
   return message.channel === "workbench-newsnow" && message.version === 1 && message.type === "state"
     && !!state && Number.isInteger(state.total) && state.total >= 0
     && Number.isInteger(state.hidden) && state.hidden >= 0 && state.hidden <= state.total
     && Number.isInteger(state.completed) && state.completed >= 0 && state.completed <= state.total
     && typeof state.refreshing === "boolean" && typeof state.message === "string" && typeof state.storageError === "string"
     && Array.isArray(state.failures) && state.failures.length <= state.total
-    && state.failures.every(item => item && typeof item.id === "string" && typeof item.label === "string" && typeof item.reason === "string");
+    && state.failures.every(item => item && typeof item.id === "string" && typeof item.label === "string" && typeof item.reason === "string")
+    && (layout === undefined || !!layout && layout.schemaVersion === 1
+      && Array.isArray(layout.order) && Array.isArray(layout.hidden)
+      && layout.order.length <= state.total && layout.hidden.length <= state.total
+      && [...layout.order, ...layout.hidden].every(id => typeof id === "string"));
 }
 
 // Workers share only a read cursor; each source owns its request and existing NewsNow cache entry.

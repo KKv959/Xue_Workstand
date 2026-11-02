@@ -104,6 +104,12 @@ export function useWriterGeneration({
   const [activeVariantKey, setActiveVariantKey] = useState("");
   const [generateStage, setGenerateStage] = useState("");
   const [activeWriteJobId, setActiveWriteJobId] = useState(readPendingWriteJobId);
+  const activeWriteJobIdRef = useRef(activeWriteJobId);
+  useEffect(() => { activeWriteJobIdRef.current = activeWriteJobId; }, [activeWriteJobId]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const [followMatchingJob, setFollowMatchingJob] = useState(true);
+  const detachedJobsRef = useRef(new Set<string>());
   const generationRestoreRef = useRef<(() => void) | null>(null);
   const versionEditsRef = useRef(new Map<string, WriterVariantState>());
   const handledWriteJobsRef = useRef(new Map<string, number>());
@@ -141,10 +147,11 @@ export function useWriterGeneration({
   const activeWriteJob = useMemo(() => {
     const tracked = writeJobCandidates.find((job) => job.id === activeWriteJobId);
     if (tracked) return tracked;
+    if (!followMatchingJob) return null;
     return writeJobCandidates.find((job) =>
       isActiveJob(job) && isCurrentWriteJob(job, selectedAccount?.id, writeJobSourceKey)
     ) || null;
-  }, [activeWriteJobId, selectedAccount?.id, writeJobCandidates, writeJobSourceKey]);
+  }, [activeWriteJobId, followMatchingJob, selectedAccount?.id, writeJobCandidates, writeJobSourceKey]);
   const isGenerating = Boolean(activeWriteJob && isActiveJob(activeWriteJob));
   const canGenerate = Boolean(hasTaskInput && styleRefs.length && lastDraftBase?.targetType !== "project" && !busy && !isGenerating);
   const canRevise = Boolean(
@@ -168,6 +175,34 @@ export function useWriterGeneration({
     version: variant.draftBase?.version,
     hasUnsavedChanges: Boolean(variant.draftId && variant.content !== variant.savedContent)
   })), [generatedVariants]);
+
+  const detachGeneration = useCallback(() => {
+    const activeWriteJobId = activeWriteJobIdRef.current;
+    if (activeWriteJobId) {
+      detachedJobsRef.current.add(activeWriteJobId);
+      clearPendingWriteJobId(activeWriteJobId);
+    }
+    setFollowMatchingJob(false);
+    setActiveWriteJobId("");
+    generationRestoreRef.current = null;
+    setGenerateStage("");
+    setBusy(current => current === "generate" ? "" : current);
+  }, [setBusy]);
+
+  useEffect(() => {
+    for (const job of writeJobCandidates) {
+      if (!detachedJobsRef.current.has(job.id) || isActiveJob(job)) continue;
+      const result = job.result as WriteGenerationResult | undefined;
+      if (!result) continue;
+      const revision = job.dataRevision || 0;
+      if (handledWriteJobsRef.current.has(job.id)
+        && handledWriteJobsRef.current.get(job.id)! >= revision) continue;
+      handledWriteJobsRef.current.set(job.id, revision);
+      const saved = isWriteBatchResult(result) ? result.results : [result];
+      for (const item of saved) if (item.draft) onDraftSaved?.(item.draft);
+      if (saved.some(item => item.draft)) void refresh();
+    }
+  }, [onDraftSaved, refresh, writeJobCandidates]);
 
   const applyVariantState = useCallback((variant: WriterVariantState) => {
     setActiveVariantKey(variant.key);
@@ -334,7 +369,9 @@ export function useWriterGeneration({
   ]);
 
   const handleGenerate = useCallback(async () => {
-    if (!canGenerate) return;
+    if (!canGenerate || submittingRef.current) return;
+    submittingRef.current = true;
+    setIsSubmitting(true);
     generationRestoreRef.current = captureEditingState();
     setBusy("generate");
     setNotice("");
@@ -382,6 +419,9 @@ export function useWriterGeneration({
       setGenerateStage("任务启动失败");
       setActiveWriteJobId("");
       setBusy("");
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
     }
   }, [
     activeTitle,
@@ -402,12 +442,14 @@ export function useWriterGeneration({
   ]);
 
   const handleRevise = useCallback(async (variantKeys?: string[]) => {
-    if (!canRevise || !lastDraftBase || lastDraftBase.targetType === "project") return;
+    if (submittingRef.current || !canRevise || !lastDraftBase || lastDraftBase.targetType === "project") return;
     const targets = variantKeys?.length ? generatedVariants.filter(item => variantKeys.includes(item.key)) : [];
     if (variantKeys && (!targets.length || targets.some(item => !item.draftId || !item.content.trim()))) {
       setNotice("请选择有正文的稿件后再修改。");
       return;
     }
+    submittingRef.current = true;
+    setIsSubmitting(true);
     generationRestoreRef.current = captureEditingState();
     setBusy("generate");
     setNotice("");
@@ -447,6 +489,9 @@ export function useWriterGeneration({
       setGenerateStage("任务启动失败");
       setActiveWriteJobId("");
       setBusy("");
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
     }
   }, [
     canRevise,
@@ -548,23 +593,24 @@ export function useWriterGeneration({
   }, [updateActiveVariant]);
 
   const loadDraftResult = useCallback((draft: Draft, batch: Draft[] = [draft]) => {
-    generationRestoreRef.current = null;
+    detachGeneration();
     const variant = variantStateFromDraft(draft);
     setGeneratedVariants(batch.map(variantStateFromDraft));
     applyVariantState(variant);
     setGenerateStage("");
-  }, [applyVariantState]);
+  }, [applyVariantState, detachGeneration]);
 
   const loadDraftVersion = useCallback((draft: Draft) => {
+    detachGeneration();
     const current = generatedVariants.find(item => item.key === activeVariantKey);
     if (current) versionEditsRef.current.set(current.draftId, { ...current, content: lastContent });
     const variant = { ...(versionEditsRef.current.get(draft.id) || variantStateFromDraft(draft)), key: activeVariantKey || draft.id };
     setGeneratedVariants(current => current.length ? current.map(item => item.key === activeVariantKey ? variant : item) : [variant]);
     applyVariantState(variant);
-  }, [activeVariantKey, applyVariantState, generatedVariants, lastContent]);
+  }, [activeVariantKey, applyVariantState, detachGeneration, generatedVariants, lastContent]);
 
   const clearDraftResult = useCallback(() => {
-    generationRestoreRef.current = null;
+    detachGeneration();
     setLastContent("");
     setLastResearch("");
     setLastSavedContent("");
@@ -575,9 +621,10 @@ export function useWriterGeneration({
     setGenerateStage("");
     clearPendingWriteJobId(activeWriteJobId);
     setActiveWriteJobId("");
-  }, [activeWriteJobId]);
+  }, [activeWriteJobId, detachGeneration]);
 
   return {
+    isSubmitting,
     captureEditingState,
     canGenerate,
     canRevise,

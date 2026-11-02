@@ -19,7 +19,8 @@ body {
   font-weight: var(--font-weight-regular);
   line-height: var(--line-height-body);
   letter-spacing: 0;
-  overflow-x: hidden;
+  /* Clip horizontal overflow without trapping the sidebar's sticky positioning. */
+  overflow-x: clip;
   font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

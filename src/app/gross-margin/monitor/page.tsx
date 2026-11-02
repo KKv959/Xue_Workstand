@@ -6,6 +6,7 @@ import { Suspense, useEffect, useMemo, useRef, useState, type WheelEvent } from 
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
+  ArrowDownAZ,
   CheckCircle2,
   ChevronDown,
   Copy,
@@ -85,6 +86,7 @@ function GrossMarginMonitorPageContent() {
     };
   }, [library]);
   const accountFilter = searchParams.get("q") || "";
+  const sortByAccount = searchParams.get("sort") === "account";
   const rawSelectedAccount = searchParams.get("account") || "all";
   const selectedAccount = rawSelectedAccount === "all" ? "all" : normalizeGrossMarginAccountName(rawSelectedAccount);
   const projectFilter = searchParams.get("project") || "all";
@@ -132,11 +134,19 @@ function GrossMarginMonitorPageContent() {
   const sortedRecords = useMemo(
     () =>
       [...filteredRecords].sort((left, right) => {
+        if (sortByAccount) {
+          const leftAccount = normalizeGrossMarginAccountName(left.accountName);
+          const rightAccount = normalizeGrossMarginAccountName(right.accountName);
+          if (!leftAccount && rightAccount) return 1;
+          if (leftAccount && !rightAccount) return -1;
+          const accountDiff = leftAccount.localeCompare(rightAccount, "zh-CN", { numeric: true });
+          if (accountDiff !== 0) return accountDiff;
+        }
         const publishedTimeDiff = getSortTime(right.publishedAt) - getSortTime(left.publishedAt);
         if (publishedTimeDiff !== 0) return publishedTimeDiff;
         return getSortTime(right.updatedAt) - getSortTime(left.updatedAt);
       }),
-    [filteredRecords]
+    [filteredRecords, sortByAccount]
   );
   const monitorProjects = useMemo(() => library?.monitorProjects || [], [library]);
   const hasActiveFilters = Boolean(accountFilter.trim() || selectedAccount !== "all" || projectFilter !== "all" || dateFromFilter || dateToFilter);
@@ -170,7 +180,7 @@ function GrossMarginMonitorPageContent() {
     };
   }, [notify]);
 
-  function updateFilters(updates: Partial<Record<"q" | "account" | "project" | "from" | "to", string>>) {
+  function updateFilters(updates: Partial<Record<"q" | "account" | "project" | "from" | "to" | "sort", string>>) {
     const params = new URLSearchParams(window.location.search);
     params.delete("platform");
     for (const [key, value] of Object.entries(updates)) setOptionalQueryParam(params, key, value);
@@ -449,6 +459,16 @@ function GrossMarginMonitorPageContent() {
               </label>
             </span>
             <MonitorDateFilter from={dateFromFilter} to={dateToFilter} onChange={(from, to) => updateFilters({ from, to })} />
+            <button
+              className={`btn compact ${sortByAccount ? "secondary" : "ghost"}`}
+              aria-pressed={sortByAccount}
+              title={sortByAccount ? "点击恢复按发布时间排序" : "按账号名称排序，同账号内最新视频在前"}
+              onClick={() => updateFilters({ sort: sortByAccount ? "" : "account" })}
+              type="button"
+            >
+              <ArrowDownAZ aria-hidden="true" size={15} />
+              按账号排序
+            </button>
             {hasActiveFilters ? (
               <button
                 className="btn subtle compact"
@@ -711,7 +731,7 @@ function MonitorCard({
               <em className="gross-monitor-publish-date">{formatMonthDay(record.publishedAt)}</em>
               <MenuTrigger>
                 <Button className="btn compact gross-monitor-action-trigger" aria-label="监控操作">操作<ChevronDown aria-hidden="true" size={12} /></Button>
-                <Popover isNonModal className="workbench-select-popover gross-monitor-action-popover" placement="bottom end" offset={4}>
+                <Popover className="workbench-select-popover gross-monitor-action-popover" placement="bottom end" offset={4}>
                   <Menu className="workbench-select-options" aria-label="监控操作">
                     {record.videoUrl ? <MenuItem className="workbench-select-option" textValue="打开视频" href={record.videoUrl} target="_blank" rel="noreferrer"><Link2 aria-hidden="true" size={14} /><span>打开视频</span></MenuItem> : null}
                     <MenuItem className="workbench-select-option" textValue="复制差额" onAction={() => void onCopy(record)}><Copy aria-hidden="true" size={14} /><span>复制差额</span></MenuItem>

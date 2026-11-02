@@ -59,7 +59,7 @@ const DOUYIN_USER_VIDEOS_LIMIT = 20;
 const DOUYIN_RELATED_COMMENT_VIDEO_LIMIT = 6;
 const DOUYIN_RELATED_COMMENT_PER_VIDEO_LIMIT = 20;
 // 与 B站一致：搜索结果的评论数是占位值，按排名每次批量核验一组。
-const DOUYIN_COMMENT_COUNT_BATCH_SIZE = 8;
+const DOUYIN_COMMENT_COUNT_BATCH_SIZE = 4;
 
 type DouyinMediaLookupOptions = {
   limit?: number;
@@ -228,10 +228,11 @@ export async function getDouyinRelatedTopicComments(
     commentLimit?: number;
     excludedVideoIds?: string[];
     signal?: AbortSignal;
+    deadlineMs?: number;
     onTiming?: OpenCliTimingSink;
   } = {}
 ): Promise<DouyinRelatedCommentResult> {
-  const queries = [...new Set((Array.isArray(query) ? query : [query]).map((value) => value.replace(/\s+/g, " ").trim()).filter(Boolean))].slice(0, 2);
+  const queries = [...new Set((Array.isArray(query) ? query : [query]).map((value) => value.replace(/\s+/g, " ").trim()).filter(Boolean))].slice(0, 3);
   const cleanQuery = queries.join(" / ");
   if (!cleanQuery) {
     return { query: "", videos: [], comments: [], commentSamples: [], appliedMinLikes: 0 };
@@ -276,7 +277,7 @@ export async function getDouyinRelatedTopicComments(
     const collectionAttempts: CommentCollectionAttempt[] = [];
     let accessError = false;
     const collected = await collectCommentSources<DouyinRelatedCommentVideo, number>({
-      candidates, sourceTarget: videoLimit, signal: options.signal, budget: options.collectionBudget,
+      candidates, sourceTarget: videoLimit, signal: options.signal, budget: options.collectionBudget, deadlineMs: options.deadlineMs,
       shouldStop: () => accessError, count: (result) => result,
       read: async (video) => {
       const started = Date.now();

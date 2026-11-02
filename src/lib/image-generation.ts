@@ -4,7 +4,6 @@ import { imageGenerationInputSchema, type ImageGenerationInput, type ImageGenera
 import { getImageFile, getImageRecord, saveImageFile, saveImageRecord } from "./storage/images";
 import { resolveImageMentions } from "./image-mentions";
 import { STORAGE_SCHEMA_VERSION } from "./storage/schemas";
-import { runPiImage } from "./pi-runtime";
 
 export async function generateImages(id: string, input: ImageGenerationInput, options: {
   signal?: AbortSignal;
@@ -12,8 +11,7 @@ export async function generateImages(id: string, input: ImageGenerationInput, op
 }) {
   const params = imageGenerationInputSchema.parse(input);
   const policy = await resolveAiPolicy("image_generate");
-  const subscription = policy.source === "subscription";
-  const baseConfig = imageConfig(subscription ? "default" : params.profileId);
+  const baseConfig = imageConfig(params.profileId);
   const config = { ...baseConfig, model: policy.model || baseConfig.model };
   const prompt = resolveImageMentions(params.prompt, params.referenceIds);
   if (params.parentRecordId) {
@@ -22,7 +20,7 @@ export async function generateImages(id: string, input: ImageGenerationInput, op
     if (params.parentImageId && (!parent.images.some((image) => image.id === params.parentImageId) || !params.referenceIds.includes(params.parentImageId))) throw new Error("来源图片不存在或未加入参考图，请重新选择。");
   } else if (params.parentImageId) throw new Error("缺少来源记录，请重新选择来源图片。");
   const now = new Date().toISOString();
-  const record: ImageGenerationRecord = { ...params, schemaVersion: STORAGE_SCHEMA_VERSION, id, model: subscription ? "ChatGPT 订阅生图" : config.model, source: subscription ? "subscription" : "relay", images: [], createdAt: now, updatedAt: now };
+  const record: ImageGenerationRecord = { ...params, schemaVersion: STORAGE_SCHEMA_VERSION, id, model: config.model, source: "relay", images: [], createdAt: now, updatedAt: now };
   options.signal?.throwIfAborted();
   await saveImageRecord(record);
   await options.onProgress("正在准备参考图", 5, true);
@@ -36,9 +34,7 @@ export async function generateImages(id: string, input: ImageGenerationInput, op
   for (let index = 0; index < params.count; index++) {
     options.signal?.throwIfAborted();
     await options.onProgress(`正在生成第 ${index + 1} / ${params.count} 张图片`, 10 + Math.floor(index / params.count * 85), false);
-    const bytes = subscription
-      ? await runPiImage({ prompt, size: params.size, quality: params.quality, images: referenceFiles.map(file => `data:${file.contentType};base64,${file.bytes.toString("base64")}`) }, options.signal)
-      : await callImageApi({ config: { ...config, size: params.size, quality: params.quality }, prompt, referenceFiles, signal: options.signal });
+    const bytes = await callImageApi({ config: { ...config, size: params.size, quality: params.quality }, prompt, referenceFiles, signal: options.signal });
     options.signal?.throwIfAborted();
     const image = await saveImageFile(bytes, `生成图片 ${index + 1}`);
     record.images.push(image);

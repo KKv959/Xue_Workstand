@@ -68,8 +68,10 @@ export function MobileAppChrome({ appMode }: { appMode: AppMode }) {
               prefetch={navPrefetch} {...linkProps(item.href)}
               key={item.href}
             >
-              <Icon aria-hidden="true" size={21} strokeWidth={1.75} />
-              <span>{item.label}</span>
+              <>
+                <Icon aria-hidden="true" size={21} strokeWidth={1.75} />
+                <span>{item.label}</span>
+              </>
             </Link>
           );
         })}

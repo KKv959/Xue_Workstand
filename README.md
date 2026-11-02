@@ -2,22 +2,28 @@
 
 本地使用的账号风格库工作台，用于把 B站 / 抖音账号的爆款内容采集、转写、沉淀成可编辑风格卡，并在写作台里参考账号风格生成文案。
 
-## 规划文档
+## 开发与接口文档
 
+- [账号风格链路](./docs/style-writing.md)：多卡写作、资料复用与稿件版本。
+- [存储模块](./src/lib/storage/README.md)：原子写入、并发、转写历史与可恢复删除。
 - [任务中心 API](./docs/api/jobs.md)：后台任务的创建、增量轮询、详情、停止与重试。
 - [对话中下载与转写视频](./docs/api/dialogue-media.md)：从任意本机对话复用单条视频接口，结果仅作为本次输出，不加入业务资料库。
 
 ## 启动
 
+日常开发与验证默认使用隔离服务；已有环境配置时沿用，不重复复制示例文件。
+
 ```bash
 npm install
 cp .env.example .env
-npm run dev
+npm run dev:sandbox
 ```
 
-打开 `http://localhost:3000`，默认进入视频热榜页 `/douyin-hotlist`（历史路径保留）。开发服务默认使用 Turbopack，侧栏仅在鼠标停留或键盘聚焦目标模块时预热该页面，不再自动遍历全站和业务 API；离开目标或点击导航时取消预热，让真实导航优先。开发模式首次访问未编译模块仍可能需要等待编译。正式服务下侧栏按 Next.js 默认在可视区预取页面，经公网链接切页时不必再等一次网络往返。
+打开 `http://127.0.0.1:3002`，默认进入视频热榜页 `/douyin-hotlist`（历史路径保留）。隔离服务使用 `.dev-sandbox/library` 和 `.dev-sandbox/next`，不读写正式资料库，也不替换 3000 服务；模型调用仍可能消耗已配置的额度。
 
-如果希望服务退出终端后仍然保持运行，可以使用后台启动：
+开发服务默认使用 Turbopack，侧栏仅在鼠标停留或键盘聚焦目标模块时预热该页面，不再自动遍历全站和业务 API；离开目标或点击导航时取消预热，让真实导航优先。开发模式首次访问未编译模块仍可能需要等待编译。正式服务下侧栏按 Next.js 默认在可视区预取页面，经公网链接切页时不必再等一次网络往返。
+
+普通开发可用 `npm run dev`，默认端口为 3000、资料库为 `style-library`，不用于写业务数据的测试。需要退出终端后继续运行时可用以下后台命令；它们管理普通开发进程，不属于 sandbox：
 
 ```bash
 npm run dev:daemon
@@ -27,6 +33,13 @@ npm run dev:stop
 ```
 
 后台日志写入 `.dev-server/next-dev.log`，该目录不会提交到 git。
+
+## 开发实现与验证
+
+- 应用内外部能力复用 `src/lib/opencli-runtime.ts`（参数数组、超时与取消）、`src/lib/model-runtime.ts`（模型与备用节点）、`src/lib/support-documents.ts`（正文读取）。联网搜索仅使用支持 Responses `web_search` 的节点；正文读取失败显式报错。
+- API 优先复用 `apiJson()`、`apiError()`、`parseJsonBody()` 和 Zod；NDJSON 复用 `createNdjsonStream()` / `readNdjsonStream()`，保持 `stage/delta/result/error/done` 及取消语义。需要持久化、进度、取消和恢复的业务任务使用[任务中心](./docs/api/jobs.md)。
+- 前端可见接口变更同步类型、`src/lib/client.ts`、缓存及页面状态；`APP_MODE` / `APP_START_PATH` 变更检查 middleware、模式守卫、导航和任务限制。敏感写接口沿用 `isLocalServiceRequest()` 或 `isLocalSameOriginRequest()` 的适用校验，破坏性操作不使用 GET。
+- 检查按改动选择：逻辑用目标测试和相关 lint，类型/接口用 `npm run typecheck`，路由或打包用隔离构建；跨模块影响扩大时再补全量测试。纯文档审 diff 并执行 `git diff --check`。界面验收见 `DESIGN.md`，存储检查见存储模块说明；已覆盖的有效检查不重复执行。
 
 ## 运行指标与模型评测
 
@@ -55,75 +68,47 @@ npm run eval:writer -- --max-concurrency 1 --no-write
 
 ```bash
 npm run remote:setup      # 首次安装本机常驻服务（macOS）
-npm run remote:start      # 启动当前正式版本
+npm run remote:start      # 启动/重启当前正式版本
 npm run remote:stop       # 停止正式服务
 npm run remote:status     # 查看正式服务和本地健康状态
-npm run remote:dev        # 切回开发服务
+npm run remote:dev        # 将 3000 服务切为开发模式，影响公网入口
 npm run remote:deploy     # 检查、构建、发布并健康检查
 npm run remote:rollback   # 回退上一可用版本
 ```
+
+操作范围遵循 `AGENTS.md` 的目标授权原则。应用服务使用 `com.xjx.account-style-library.remote`，公网网关/隧道使用 `com.xjxwork.public-gateway`、`com.xjxwork.public-tunnel`。网关配置位于 `~/.config/xjxwork-public/`、`~/.cloudflared/`，对应 LaunchAgent 位于 `~/Library/LaunchAgents/`；配置应用前备份并校验，失败恢复原配置。
 
 常驻服务按 Next.js 生产环境优先级读取项目根目录的 `.env.production.local`、
 `.env.local`、`.env.production`、`.env`（进程已有环境变量优先），支持 `$变量名` 引用。
 修改模型或联网检索配置后，执行 `npm run remote:start` 重启当前正式版本即可生效。
 
-日常开发可执行 `npm run remote:dev`，代码修改自动更新，无需逐次发布。桌面侧栏底部的“服务模式”按钮也可切换开发服务或上次发布的正式服务；仅在 Mac 本机 `localhost:3000` 页面可操作，有运行或排队任务时拒绝切换。按钮切到正式服务不会重新构建或发布代码，正式版须先通过 `remote:deploy` 更新。隔离测试服务不能控制本机服务。
+日常开发使用前述 `dev:sandbox`。`remote:dev` 会停止正式服务，在同一 3000 端口运行开发版，公网也随之切换。桌面侧栏底部的“服务模式”按钮可切换开发服务或上次发布的正式服务；仅在 Mac 本机 `localhost:3000` 页面可操作，有运行或排队任务时拒绝切换。按钮切到正式服务不会重新构建或发布代码，正式版须先通过 `remote:deploy` 更新。隔离测试服务不能控制本机服务。
 
-发布前若存在运行或排队任务会直接拒绝。正式产物保存在 `.remote-server/releases/<buildId>`，保留最近两个版本；启动失败会自动恢复上一版。正式服务始终读取当前项目的真实 `style-library`，不会创建第二份可写数据。服务通过 `caffeinate` 在 Mac 插电、开盖时保持运行。
+`remote:deploy` 仍是唯一日常发布入口，复制当前工作区的 `src`、`public`、`scripts`、`tests` 和构建配置到临时目录。新候选依次执行 `npm ci`、全量测试、完整 lint、`next build --no-lint`；构建保留 TypeScript 和生成路由类型检查，因此不再另跑一遍 typecheck 或构建内 lint。每阶段打印耗时，首次候选的完整检查不会被跳过。
 
-如果要把“数据维护”和“数据监控”单独交付给 Windows 用户，使用专用发行模式：
+已验证候选记录在 `.remote-server/candidate.json`。再次执行同一命令时，源码（包含未提交修改）、lockfile、测试、环境文件、进程环境及 Node/npm/有效 npm 配置/平台指纹必须一致，产物内容也必须通过校验，才会复用。任务阻断或真实资料库只读检查失败时保留候选；修复这些运行条件后重试，无需重复安装、测试和构建。源码或配置变化、产物缺失/损坏、候选发布失败则重新构建。资料库和任务检查每次重做；已运行同一候选且健康时不重启。
 
-```bash
-npm run package:release -- --preset gross-margin-win
-```
+配置指纹不等于配置备份：`.env*` 不复制进构建目录或产物，仍由正式进程启动时读取；构建沿用调用进程环境。项目 `.npmrc` 只用于临时目录中的依赖安装，随后删除。发布范围仍是工作区预设目录的整体内容，不支持只选本次 diff；元数据保存输入指纹，提交号不能代表全部源码。
 
-这个专用包不是单文件 `exe`，而是 Windows 便携包：解压后先运行一次 `setup-browser-bridge.cmd` 安装/启用 OpenCLI 浏览器扩展，再双击 `start.cmd`，浏览器默认打开 `/gross-margin`，并且只保留“数据维护”和“数据监控”两页；其他工作台页面在专用模式下会被自动拦回毛利模块。专用包会内置 `opencli` 主程序，目标 Windows 机器不需要再单独安装全局 opencli；B站 / 抖音实时刷新仍需要 Chrome / Edge 里的 OpenCLI Browser Bridge 扩展连通。
+发布、回滚、启停和模式切换共用 macOS PID 锁及任务检查。构建期间可正常接收任务，临近切换时短暂暂停新任务创建/重试，并检查正在落盘的创建请求、运行/排队任务和读取/恢复异常；存在任务就退出并保留候选，不轮询等待或强制杀任务。旧应用尚不支持门禁时会明确提示，其首次升级仅有任务列表检查，避免同时提交任务。门禁随操作结束释放；进程异常退出留下的标记不会永久阻塞任务。直接运行 `dev:*` 只管理开发进程，不属于正式服务切换入口。
 
-开发服务器运行时不要同时执行 `npm run build`，Next.js 会复用 `.next` 目录，可能让开发页的 CSS/JS 静态资源短暂 404。若页面看起来像样式丢失，执行：
+正式产物保存在 `.remote-server/releases/<buildId>`，成功后保留当前版本及上一健康版本，跳过失败目录；清理失败只告警，不反向判定发布失败。发布和回滚失败都会尝试恢复健康产物，并再次检查准确的 buildId、生产模式、应用与存储，以及外部能力状态，明确报告“操作失败、恢复已验证”或“恢复失败”。无法确认任务状态时不强停恢复。正式服务始终读取工作区当前环境配置、启动脚本和真实 `style-library`，产物回滚不会恢复这些内容。服务通过 `caffeinate` 在 Mac 插电、开盖时保持运行。
 
-```bash
-rm -rf .next
-npm run dev
-```
+应用就绪使用不缓存的 `GET /api/remote/ready`，核验 `ready`、`buildId`、`appMode=workspace`、`serviceMode=production` 和 `storage=ok`，存储不可用返回 503；启动等待最多 30 秒，不运行 Chrome/模型探针。回退旧版仅在该接口返回 404 时使用 `/api/remote/status?fresh=1` 检查版本和存储。完整能力状态在切换前后各刷新一次：既有异常或 Chrome 桥接离线明确告警，不单独触发回滚；OpenCLI、ffmpeg 或模型配置出现新增异常会立即复查，持续异常触发恢复。模型“已配置”不代表真实请求一定成功。本机检查不代表公网和业务验收，仍按改动核验受影响入口。
+
+构建不得与运行中的开发服务共用输出目录。普通开发使用 `.next`，sandbox 使用 `.dev-sandbox/next`，发布脚本在临时源码目录构建。静态资源异常时先核对进程与输出目录；确需清理时只清理已停止的对应开发服务产物，再启动，不删除运行中服务的构建目录。
 
 ## 已移除的隐藏功能
 
 项目工作台、项目写作和草稿封面生成已移除，相关页面、API 和新任务入口不再提供。账号写作、生图工作台、评论生成与毛利模块继续保留。经用户授权，旧项目、项目稿件及专用素材已通过资料库事务移入可恢复回收站，项目专属模型设置已清理。存储层仍兼容回收站恢复后的历史记录；服务重启时，未完成的项目风格或草稿封面任务会明确中断。
 
-## Pi 模型与中转站兜底
+## 中转站模型
 
-文字生成、风格分析、评论弹幕、提示词辅助、热点分析和图片理解优先读取 Pi 保存的全局默认模型。使用已锁定的 Pi 1.1.0；工作站只调用模型，不加载编码工具、项目指令、扩展或技能。
+文字生成、风格分析、评论弹幕、提示词辅助、热点分析、图片理解和图片生成均通过中转站调用。`/ai-settings` 只用于按业务环节选择中转模型与推理强度，不需要连接账号或保存本机凭证。
 
-在本机工作站的 `/ai-settings` 页面连接 ChatGPT 订阅，按页面链接完成浏览器授权，再选择默认模型与推理强度并保存。授权回调使用本机 `127.0.0.1:1455`；订阅配置和高级设置的写入仅允许本机同源页面，远程页面可查看状态但不能发起登录或保存。Pi 凭证保存在本机，不会返回网页。实际可用模型和额度由订阅服务响应决定。
+在 `.env.local` 配置 `CHAT_API_KEY`、`CHAT_BASE_URL`、`CHAT_MODEL`；中转站只兼容 Chat Completions 时设置 `CHAT_WIRE_API=chat_completions`，不确定时使用 `auto`。需要备用节点时配置 `CHAT_FALLBACK_*`，联网检索可单独配置 `WEB_RESEARCH_*`。图片生成使用 `IMAGE_*` 配置。
 
-```bash
-npm run pi
-```
-
-在 Pi 中运行 `/login` 登录服务商或订阅账号；运行 `/model` 选择模型，按 `Ctrl+S` 保存为默认；在 `/thinking` 中选择推理强度，同样按 `Ctrl+S` 保存默认。仅切换当前会话而未保存的选择不会影响工作站。新请求读取最新的全局配置，无需重启。订阅可用模型和额度以 Pi 登录结果及实际服务响应为准。
-
-配置默认位于 `~/.pi/agent`，可用 `PI_CODING_AGENT_DIR` 指定其他目录。工作站与终端必须使用相同操作系统用户及该目录。不要把 `auth.json` 或访问令牌放进仓库、网页或发布包。
-
-Pi 支持在该目录的 `models.json` 配置中转站，例如下面的配置（请换成服务商真实接口与型号）：
-
-```json
-{
-  "providers": {
-    "my-relay": {
-      "baseUrl": "https://relay.example.com/v1",
-      "api": "openai-completions",
-      "apiKey": "${MY_RELAY_API_KEY}",
-      "models": [{ "id": "your-model-id", "reasoning": true, "input": ["text", "image"] }]
-    }
-  }
-}
-```
-
-终端与工作站进程都需要能够读取该环境变量；支持 Responses 的中转站可用 `openai-responses`。配置参数遵循 [Pi 官方模型说明](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md)。现有中转站作为兜底时无需搬进 Pi：原有 `CHAT_*`、`CHAT_FALLBACK_*` 与历史链路覆盖设置保持可用，也不会把 Pi 订阅凭证传给中转站。
-
-Pi 没有默认模型、登录失效、额度不足、限流或请求失败且尚未收到正文时，切换原中转站链路并记录中文兜底原因。已收到部分正文后不追加另一模型的输出，也不保存为完整稿件；取消不触发兜底。设 `PI_ENABLED=0` 可完全退回原模型链路。
-
-`/ai-settings` 提供 Pi 订阅登录与默认模型选择；“高级设置”按业务环节保存调用来源（自动 / 仅订阅 / 仅中转）、中转模型和推理强度，写入 `settings/ai-models.json`，旧中转站兜底也读取该文件。联网检索继续走明确支持 `web_search` 的 Responses 节点；生图与火山 ASR 继续使用原专用接口。
+备用节点沿用 `model-runtime.ts` 的已配置链路，实际使用备用时记录 `fallback` / `fallbackReason`；最终失败返回可操作的中文错误，不用本地模板冒充模型结果。部分输出、取消和重试保持既有完整性边界，不能把半篇正文保存为成功稿件。相关回归见 `tests/model-stream-errors.test.ts`、`tests/image-runtime-errors.test.ts`。
 
 ## 配置
 
@@ -150,7 +135,7 @@ Pi 没有默认模型、登录失效、额度不足、限流或请求失败且�
 - `VOLCENGINE_ASR_RETRY_COUNT`：火山转写遇到瞬时网络错误时的重试次数，默认 `2`，建议保持在 `0-3`。
 - `DOUYIN_TRANSCRIBE_CONCURRENCY`：抖音批量转写并发数，默认 `3`，建议保持在 `1-4`。
 - `DOUYIN_HOTLIST_REFRESH_CONCURRENCY`：视频热榜账号刷新并发数，默认 `2`，允许 `1-5`；抖音使用共享会话内的有界并发，每六个账号返回后保存结果并更新进度，分页间隔 `250ms`。变量名沿用旧版抖音热榜配置。
-- `CHAT_API_KEY`、`CHAT_BASE_URL`、`CHAT_RESPONSES_URL`、`CHAT_COMPLETIONS_URL`、`CHAT_MODEL`、`CHAT_WIRE_API`、`CHAT_REASONING_EFFORT`、`CHAT_SERVICE_TIER`：主对话模型配置，用于自动提炼风格和生成文案。新中转站如果只兼容 OpenAI Chat Completions，可设 `CHAT_WIRE_API=chat_completions`；不确定时可设 `CHAT_WIRE_API=auto`，系统会在 Responses 不兼容时自动切到 Chat Completions。`CHAT_SERVICE_TIER=priority` 可显式请求中转站 / Codex 的快速服务层，和 `xhigh` 推理档位是两件事。`CHAT_BASE_URL` 可以填中转站根地址，也可以用 `CHAT_RESPONSES_URL` / `CHAT_COMPLETIONS_URL` 指定完整接口地址。`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL` 也会作为主模型配置读取。
+- `CHAT_API_KEY`、`CHAT_BASE_URL`、`CHAT_RESPONSES_URL`、`CHAT_COMPLETIONS_URL`、`CHAT_MODEL`、`CHAT_WIRE_API`、`CHAT_REASONING_EFFORT`、`CHAT_SERVICE_TIER`：中转站对话模型配置，用于自动提炼风格和生成文案。新中转站如果只兼容 OpenAI Chat Completions，可设 `CHAT_WIRE_API=chat_completions`；不确定时可设 `CHAT_WIRE_API=auto`，系统会在 Responses 不兼容时自动切到 Chat Completions。`CHAT_BASE_URL` 可以填中转站根地址，也可以用 `CHAT_RESPONSES_URL` / `CHAT_COMPLETIONS_URL` 指定完整接口地址。`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL` 仅作为兼容命名读取，仍通过中转站发送。
 - `CHAT_FALLBACK_API_KEY`、`CHAT_FALLBACK_BASE_URL`、`CHAT_FALLBACK_RESPONSES_URL`、`CHAT_FALLBACK_COMPLETIONS_URL`、`CHAT_FALLBACK_MODEL`、`CHAT_FALLBACK_WIRE_API`、`CHAT_FALLBACK_REASONING_EFFORT`、`CHAT_FALLBACK_SERVICE_TIER`、`CHAT_FALLBACK_PROXY_URL`、`CHAT_FALLBACK_ENABLED`：第一备用对话模型配置。默认配置为 `https://www.fhl.mom` / `gpt-6.1-sol` / `responses` / `xhigh`，但必须单独填写 `CHAT_FALLBACK_API_KEY` 或 `FHL_API_KEY` 才会启用，避免把主模型 key 发到旧中转站。还可按相同后缀配置 `CHAT_FALLBACK_2_*` 至 `CHAT_FALLBACK_5_*`，系统会依次尝试。
 - `CHAT_PROXY_URL`：可选。若 Node/Next 直连模型服务失败，可设为本机代理，例如 `http://127.0.0.1:7890`。
 - `BILIBILI_HTTP_PROXY`：可选，仅用于 B站公开详情、评论和短链接的后台 HTTP 请求。Node 不自动跟随 macOS 系统代理；直连超时时可填写已验证的本机 HTTP 代理（如 `http://127.0.0.1:7890`）。留空保持直连，浏览器抓取逻辑不变。
@@ -215,62 +200,11 @@ Pi 没有默认模型、登录失效、额度不足、限流或请求失败且�
 
 读取热榜不会创建目录、迁移主账号库视频或重写关注列表。旧版 `douyin:` 引用会明确提示需显式迁移；已有独立热榜账号的目录保持不变，新账号按平台与 UID 区分，同名账号不会覆盖。
 
+热榜刷新通过任务中心执行，watchlist 更新沿用存储锁；独立账号库及并发/损坏处理见 `tests/hotlist-storage-safety.test.ts`。账号库的 B站列表与详情统计通过 `/api/videos/hydrate` 二次补全，页面复用 `hydrateVideo()` / `hydrateVideos()`，不把初次采集摘要当作最终统计；当前列表入口为 `useBilibiliStatsHydration`。
+
 抖音热榜通过 OpenCLI 后台共享会话批量读取作品接口：每轮只初始化一次抖音会话，不逐账号打开主页。发布时间和互动统计使用接口真实字段，不从作品 ID 推测日期；批量媒体地址预取仍使用 `opencli douyin user-videos`。遇到 HTTP `401` / `403` / `444` / `429` 时暂停尚未发出的抖音请求，保留已成功结果与已有数据，并在刷新日志中提示处理方式；完成浏览器验证或等待限流恢复后可再次刷新。
 
 抖音单链接素材读取与单条媒体地址刷新使用 `opencli douyin detail`，直接按作品链接或 ID 取得标题、作者、封面和视频地址；返回的作品 ID 必须匹配，图文作品或缺少有效视频地址会显式报错。抖音转写优先复用已采集的媒体地址，必要时调用 `detail` 刷新单条地址，然后由本机 `ffmpeg` 抽取 16kHz 单声道低码率 mp3，并通过火山引擎录音文件识别 2.0 的 `audio.data` 提交转写，避免火山服务端直接拉取带防盗链的抖音 URL。批量转写抖音视频时会先按账号预取一次媒体地址，再使用小并发转写，以减少重复 opencli 查询和火山任务排队带来的等待；如果本机网络、opencli、ffmpeg 或火山接口限流不稳定，可把 `DOUYIN_TRANSCRIBE_CONCURRENCY` 调回 `1`。B站视频仍优先使用公开字幕，没有字幕时会尝试下载后抽音频转写。
-
-开发验证可依次运行 `npm test`、`npm run lint`、`npm run typecheck` 和 `npm run check:library`。若一致性检查只报告可安全推导的转写元数据漂移，可在确认后运行 `npm run check:library:repair`；修复前的原文件会备份到 `style-library/.repairs/<timestamp>/`，孤立目录、损坏 JSON 和跨引用问题不会自动修改。
-
-## 打包交付
-
-生成可交付运行包：
-
-```bash
-npm run package:release
-```
-
-如果要生成“数据维护 / 数据监控”Windows 专用便携包：
-
-```bash
-WINDOWS_NODE_DIR=/path/to/windows-node npm run package:release -- --preset gross-margin-win
-```
-
-如果要生成给普通 Windows 用户双击安装的 `.exe` 安装包，优先使用 GitHub Actions 里的
-`Build Gross Margin Windows Installer` 工作流。它会在 Windows runner 上安装 Inno Setup，
-并执行：
-
-```bash
-npm run package:release -- --preset gross-margin-win-installer
-```
-
-安装包会把程序装到用户目录下，并创建桌面/开始菜单快捷方式；运行数据保存在用户
-`AppData`，升级安装不会覆盖已有维护和监控数据。本机 macOS 仍可继续生成 `.zip`
-便携包用于排查，但不建议在 macOS 上直接生成 `.exe`。
-
-脚本会在临时目录安装依赖并构建 Next.js standalone 产物，输出到 `dist/`：
-
-- `account-style-library-*.tar.gz`：macOS / Linux 交付压缩包。
-- `account-style-library-*.zip`：Windows 优先使用这个压缩包。
-- `account-style-library-*-setup.exe`：Windows 安装包，优先交付给什么都没装的用户。
-- 同名目录：本机可直接测试的解压目录。
-
-`--preset gross-margin-win` 只生成 Windows `.zip` 和对应目录，不再生成 macOS / Linux `.tar.gz`。打包前需要通过 `WINDOWS_NODE_DIR` 提供一个包含 `node.exe` 的 Windows Node 运行时目录，脚本会把它内置到运行包里。
-
-默认不会把本机 `style-library` 打进包里，避免误发账号素材、转写稿、草稿和监控记录。对方首次启动后会在运行包内创建空的 `style-library`。如果确实要带当前本地数据一起交付，显式执行：
-
-```bash
-npm run package:release -- --include-library
-```
-
-`--preset gross-margin-win` 固定只复制毛利数据，不会把整个 `style-library` 打进包里，避免误发其他账号库、草稿和写作素材。打包时只允许显式 `GROSS_MARGIN_LIBRARY_SOURCE` 或当前仓库 `style-library/gross-margin` 作为毛利数据源；找不到数据源会直接失败。如果确实要生成空毛利包，追加 `--allow-empty-gross-margin`。
-
-对方解压后：
-
-- macOS 双击 `install-deps.command` 检查/安装 Node.js、opencli、ffmpeg，再双击 `start.command`。
-- 终端运行 `./install-deps.sh`、`./start.sh`、`./stop.sh`。
-- Windows 先完整解压 `.zip`，首次使用运行 `setup-browser-bridge.cmd`，确认 OpenCLI Browser Bridge 扩展连通后再运行 `start.cmd`、`stop.cmd`；不要在压缩包预览窗口里直接双击。`gross-margin-win` 专用包会优先使用包内 `node.exe`，目标机不需要先全局安装 Node 或 opencli。
-
-数据维护 / 数据监控模块不需要大模型；专用包已内置 `opencli` 主程序以支持刷新平台数据，但浏览器型抓取需要 Browser Bridge 扩展，无字幕视频转写才需要 `ffmpeg` 和火山转写配置。
 
 默认写作只读取风格卡，不再选取原作或制定计划。`writer.preparation` 日志记录素材、支持文档、联网和风格准备耗时，不记录资料正文。
 
@@ -293,13 +227,12 @@ npm run package:release -- --include-library
 
 生图工作台支持模型配置选择、自定义宽高（256–4096）、16 倍数对齐和常用比例 / 2K / 4K 预设。尺寸是否可用由对应图片服务决定。新增服务使用 `.env.local` 的 `IMAGE_PROFILES` JSON 数组，例如 `[{"id":"provider2","label":"第二套服务","model":"模型名","baseUrl":"https://example.com/v1","apiKey":"服务密钥"}]`。每套配置有独立密钥和地址，页面只接收名称与 ID；原 `IMAGE_*` 配置保留为 `default`，`IMAGE_DEFAULT_PROFILE` 可指定新建任务默认选择的配置 ID。历史记录保留所选配置 ID，旧记录继续使用默认配置；修改配置后重启服务生效。
 
-本机订阅生图：在 AI 模型配置连接「ChatGPT 订阅（Codex）」，将「图片生成」来源保存为「仅订阅」，重新打开生图工作台。该路径通过 Pi 调用 Codex 的 `image_generation` 工具，支持参考图、逐张保存和取消，使用订阅额度；不依赖 OpenAI 直连资格，不自动切换中转。中转型号覆盖仅对「仅中转」生效。图片记录保留实际来源。
 
 ### 游戏热点雷达
 
-资讯发现沿用本机 NewsNow v0.0.41。右上角刷新最多并发请求 4 个来源，覆盖全部卡片（含隐藏的来源）；来源失败时保留旧内容并显示失败原因。卡片可拖拽排序、隐藏与恢复，偏好仅保存在当前浏览器。对固定镜像应用交互层：`node --import tsx scripts/install-newsnow-workbench.mjs --apply`。脚本先校验镜像，备份部署代码，再重建 NewsNow 容器，不删除数据卷；升级镜像前需要更新适配器。
+资讯发现沿用本机 NewsNow v0.0.41。右上角刷新最多并发请求 4 个来源，覆盖全部卡片（含隐藏的来源）；来源失败时保留旧内容并显示失败原因。卡片可拖拽排序、隐藏与恢复，偏好保存在当前浏览器的工作台站点，刷新、切换页签与重新进入后恢复；首次连接会沿用内嵌页已有偏好，不覆盖损坏的存储记录。对固定镜像应用交互层：`node --import tsx scripts/install-newsnow-workbench.mjs --apply`。脚本先校验镜像，备份部署代码，再重建 NewsNow 容器，不删除数据卷；升级镜像前需要更新适配器。
 
-`/hotspots` 默认打开 TrendRadar 原生报告。工作台使用本机 Docker 容器 `workbench-trendradar`（可由 `TRENDRADAR_CONTAINER` 覆盖），直接执行已安装 [TrendRadar](https://github.com/sansan0/TrendRadar) 引擎的采集、筛选、排名统计、AI 分析与 HTML 报告生成；当前适配验证版本为 6.10.0。旧工作台的粗筛 → 事件归并 → 精筛 → 五档选题卡链路已退出后台任务入口，旧文件保留，不自动迁移或删除。NewsNow 仍可在“资讯发现”浏览。
+`/hotspots` 默认打开“资讯发现”，通过页签或 `?view=topics` 查看 TrendRadar 原生报告。工作台使用本机 Docker 容器 `workbench-trendradar`（可由 `TRENDRADAR_CONTAINER` 覆盖），直接执行已安装 [TrendRadar](https://github.com/sansan0/TrendRadar) 引擎的采集、筛选、排名统计、AI 分析与 HTML 报告生成；当前适配验证版本为 6.10.0。旧工作台的粗筛 → 事件归并 → 精筛 → 五档选题卡链路已退出后台任务入口，旧文件保留，不自动迁移或删除。
 
 使用方法：选择“全天汇总 / 当前榜单 / 增量更新”，选择 AI 兴趣筛选或已配置关键词，填写关注方向后点击“采集并生成报告”。全天汇总使用当天累积数据，当前榜单查看本轮榜单，增量更新查看首次发现的资讯。生成过程接入任务中心，支持进度、取消和重启中断后的重试；成功后原子保存报告及原生分类状态，失败保留上次成功报告。没有匹配资讯时原生引擎可能不执行 AI 分析，页面明确提示。
 
@@ -307,6 +240,6 @@ AI 兴趣筛选沿用 TrendRadar 的标签提取、相关度分类、兴趣变�
 
 容器配置位于 `~/Applications/trendradar/config`；除了 `config.yaml`、`frequency_words.txt`，须有官方 `ai_analysis_prompt.txt` 与 `ai_filter/{prompt,extract_prompt,update_tags_prompt}.txt`。工作台在容器临时目录运行，读取当天上游数据库的 SQLite 一致性副本，后续沿用工作台已保存的原生数据库状态；仅采集配置内来源，不读取工作台抖音/B站视频热榜。上游每 30 分钟的独立采集继续运行，手动生成报告也会执行原生采集。工作台报告保存于资料库 `hotspots/trendradar-native.json`，不会覆盖容器原有报告或旧选题文件。
 
-与上游的集成边界：工作台明确展示采集异常与备用模型状态；AI 筛选或分析失败直接报错，不静默退回关键词或原始模型文本。标题翻译沿用容器中的 `ai_translation` 设置与官方提示词，翻译失败显式报错；报告分析使用中文。工作台只生成本地报告，不调用原生通知渠道发送消息。默认发行包不附带 TrendRadar 引擎，需另行安装官方容器及配置。
+与上游的集成边界：工作台明确展示采集异常与备用模型状态；AI 筛选或分析失败直接报错，不静默退回关键词或原始模型文本。标题翻译沿用容器中的 `ai_translation` 设置与官方提示词，翻译失败显式报错；报告分析使用中文。工作台只生成本地报告，不调用原生通知渠道发送消息。工作台不附带 TrendRadar 引擎，需另行安装官方容器及配置。
 
 旧 `/api/hotspots/trendradar` 只读候选接口仍可通过 `TRENDRADAR_OUTPUT_DIR` 读取上游数据库，`127.0.0.1:8081` 仍是独立容器的报告页，不是工作台控制 API。工作台新报告可在页面阅读或独立打开。

@@ -1353,6 +1353,7 @@ export type JobListItem = Omit<JobRecord, "partialText" | "result"> & {
 };
 
 export type JobListResponse = {
+  pendingCreations?: number;
   readErrors?: string[];
   recoveryErrors?: Record<string, string>;
   jobs: JobListItem[];

@@ -1639,7 +1639,8 @@
   border-radius: var(--radius-lg);
   color: var(--muted-strong);
   background: color-mix(in oklch, var(--panel-soft) 74%, var(--panel-raised));
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 7;
+  white-space: pre-line;
 }
 
 @media (min-width: 1321px) {

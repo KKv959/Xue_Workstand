@@ -1,6 +1,5 @@
-import { applyAiPolicy, aiPolicySignature, resolveAiSource } from "./ai-policy-runtime";
+import { applyAiPolicy, aiPolicySignature } from "./ai-policy-runtime";
 import type { AiPolicyId } from "./ai-policy-catalog";
-import { piEnabled, runPiModel, PiRequestError, type PiRequest } from "./pi-runtime";
 import { randomUUID } from "crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { preserveWriterPreferences, writerStyleParts } from "./writer-preference";
@@ -110,7 +109,7 @@ export type ChatCompletionResult = {
   userMessage?: string;
   rawErrorMessage?: string;
   usedTools?: string[];
-  backend?: "pi" | "legacy";
+  backend?: "legacy";
 };
 
 export type WriteCopyInput = {
@@ -302,12 +301,11 @@ export async function chatComplete(
   reasoningEffort?: ChatReasoningEffort,
   options: ChatRequestOptions = {}
 ): Promise<ChatCompletionResult> {
-  return preferPi({ messages, maxOutputTokens: options.maxOutputTokens }, options, () => chatCompleteWithFallback(messages, reasoningEffort, undefined, options));
+  return chatCompleteWithFallback(messages, reasoningEffort, undefined, options);
 }
 
 export function chatCompleteStrict(...args: Parameters<typeof chatCompleteStrictLegacy>): Promise<ChatCompletionResult> {
-  const [messages, , options = {}] = args;
-  return preferPi({ messages, maxOutputTokens: options.maxOutputTokens }, options, () => chatCompleteStrictLegacy(...args));
+  return chatCompleteStrictLegacy(...args);
 }
 
 async function chatCompleteStrictLegacy(
@@ -398,10 +396,7 @@ function strictChatFailureAction(kind: ModelErrorKind) {
 }
 
 async function completeVision(prompt: string, images: string[], options: ChatRequestOptions, validate: (text: string) => unknown, material = false) {
-  const instruction = options.visionInstruction || "你是短视频素材画面描述整理员。输出严格 JSON，不要 Markdown。";
-  return preferPi({ messages: [{ role: "system", content: instruction }, { role: "user", content: prompt }], images,
-    maxOutputTokens: options.maxOutputTokens }, options, async () => {
-    const configs = await applyAiPolicy(configuredChatConfigs().map(config => material
+  const configs = await applyAiPolicy(configuredChatConfigs().map(config => material
       ? { ...config, reasoningEffort: "low" as const, chatCompletionReasoningEffort: "none" as const } : config), "vision");
     let lastError: unknown;
     for (const config of configs) {
@@ -419,7 +414,6 @@ async function completeVision(prompt: string, images: string[], options: ChatReq
       }
     }
     throw lastError instanceof Error ? lastError : new Error("未配置支持图片的中转站模型，无法读取图片。");
-  });
 }
 
 export async function readDocumentImages(images: string[], signal?: AbortSignal): Promise<string[]> {
@@ -468,43 +462,7 @@ export async function analyzeMaterialFrames(input: {
 
 export function streamResponseText(input: Parameters<typeof streamResponseTextLegacy>[0]): Promise<ChatCompletionResult> {
   if (input.tools?.length) return streamResponseTextLegacy(input);
-  return preferPi({ messages: input.messages, maxOutputTokens: input.maxOutputTokens }, input, () => streamResponseTextLegacy(input));
-}
-
-async function preferPi(
-  request: PiRequest,
-  options: { signal?: AbortSignal; policy?: AiPolicyId; onDelta?: (delta: string) => void; onRetry?: (message: string) => void | Promise<void> },
-  legacy: () => Promise<ChatCompletionResult>
-): Promise<ChatCompletionResult> {
-  const source = await resolveAiSource(options.policy);
-  if (source === "relay" || !piEnabled() && source !== "subscription") return legacy();
-  if (!piEnabled()) throw new Error("Pi 订阅已关闭，请启用订阅或将此环节改为中转站");
-  let partial = "";
-  try {
-    const result = await withModelTimeout(signal => runPiModel(request, {
-      signal, onDelta(delta) { partial += delta; options.onDelta?.(delta); }
-    }), options.signal, options.policy === "account_style" ? STYLE_REQUEST_TIMEOUT_MS : options.policy === "writer_generate" || options.policy === "writer_revise" ? WRITER_REQUEST_TIMEOUT_MS : MODEL_REQUEST_TIMEOUT_MS, "Pi 模型请求");
-    return { ...result, backend: "pi" };
-  } catch (error) {
-    throwIfAborted(options.signal);
-    // Never concatenate another model's answer after already receiving partial text.
-    partial ||= error instanceof PiRequestError ? error.partialText : "";
-    if (partial) throw new StreamResponseTextError(error, partial);
-    const reason = error instanceof PiRequestError ? error.message : "Pi 模型当前不可用，请在终端检查登录与配置";
-    if (source === "subscription") throw new Error(reason, { cause: error });
-    await options.onRetry?.(`${reason}，正在切换原中转站兜底`);
-    logPipelineEvent("model.pi-fallback", { reason });
-    try {
-      const result = await legacy();
-      if (!result.ok) throw new Error(result.userMessage || "原中转站没有返回完整结果");
-      return { ...result, backend: "legacy", fallback: true,
-        fallbackReason: `${reason}，已使用原中转站兜底${result.fallbackReason ? `；${result.fallbackReason}` : ""}` };
-    } catch (legacyError) {
-      throwIfAborted(options.signal);
-      if (legacyError instanceof StreamResponseTextError) throw legacyError;
-      throw new Error(`${reason}；原中转站兜底也失败：${legacyError instanceof Error ? legacyError.message : "模型不可用"}`, { cause: legacyError });
-    }
-  }
+  return streamResponseTextLegacy(input);
 }
 
 async function streamResponseTextLegacy(input: {

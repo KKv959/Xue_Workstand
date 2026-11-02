@@ -1,4 +1,4 @@
-export const SOURCE_VIDEO_COMMENT_THRESHOLD = 200;
+export const SOURCE_VIDEO_COMMENT_THRESHOLD = 20;
 
 /** 只接受明确的评论计数；缺失值不能当成零或用点赞、弹幕数替代。 */
 export function sourceCommentCount(...values: unknown[]): number | undefined {
@@ -111,24 +111,34 @@ export async function collectCommentSources<T, R>(input: {
   shouldStop?: () => boolean;
   budget?: CommentCollectionBudget;
   signal?: AbortSignal;
+  deadlineMs?: number;
+  concurrency?: number;
 }) {
   const videos: T[] = [];
   const results: R[] = [];
   let sources = 0;
   let attempts = 0;
-  for (const video of input.candidates) {
+  const concurrency = Math.max(1, Math.min(input.concurrency || 1, 4));
+  const deadlineReached = () => Boolean(input.deadlineMs && Date.now() >= input.deadlineMs);
+  // 按波次并发读取，波次之间才重新判断预算和截止，避免超读过多来源。
+  for (let start = 0; start < input.candidates.length; start += concurrency) {
     input.signal?.throwIfAborted();
     const complete = input.budget
       ? attempts >= input.sourceTarget && !input.budget.needsMore()
       : sources >= input.sourceTarget;
-    if (input.shouldStop?.() || complete) break;
-    attempts += 1;
-    const result = await input.read(video);
-    const count = input.count(result);
-    if (count <= 0) continue;
-    videos.push(video);
-    results.push(result);
-    sources += 1;
+    if (input.shouldStop?.() || complete || deadlineReached()) break;
+    const wave = input.candidates.slice(start, start + concurrency);
+    attempts += wave.length;
+    const rows = await Promise.all(wave.map(async (video) => {
+      const result = await input.read(video);
+      return { video, result, count: input.count(result) };
+    }));
+    for (const row of rows) {
+      if (row.count <= 0) continue;
+      videos.push(row.video);
+      results.push(row.result);
+      sources += 1;
+    }
   }
   return { videos, results };
 }

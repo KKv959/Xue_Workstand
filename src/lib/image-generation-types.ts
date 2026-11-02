@@ -21,7 +21,7 @@ export type ImageGenerationRecord = ImageGenerationInput & {
   deletedAt?: string;
   id: string;
   model: string;
-  source?: "subscription" | "relay";
+  source?: "relay";
   images: ImageFile[];
   createdAt: string;
   updatedAt: string;

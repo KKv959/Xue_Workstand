@@ -100,7 +100,7 @@ test("评论生成与质检只恢复失败批次，失败有界且用户取消�
       assert.deepEqual(result.batchParsed, ["第一条评论", "第二条评论[笑哭]"]);
       assert.equal(result.attempts, 2);
       assert.equal(received.length, 2);
-      assert.match(received[1].messages[2].content, /完整 JSON 数组/);
+      assert.match(received[1].messages[2].content, /完整的 JSON 对象/);
     });
     await t.test("连续断网有限重试，鉴权失败不做无效重试", async () => {
       switchMode("network");

@@ -1,6 +1,6 @@
 # 任务中心 API
 
-任务中心 API 用于提交需要在后台执行的长任务，并通过轮询任务状态获取进度、结果、失败原因或取消任务。接口与当前网页同源，默认开发地址为 `http://localhost:3000`。
+任务中心 API 用于提交需要在后台执行的长任务，并通过轮询任务状态获取进度、结果、失败原因或取消任务。接口与当前网页同源；以下示例使用隔离开发地址 `http://127.0.0.1:3002`，普通开发/正式服务使用 3000。
 
 接口实现位于 `src/app/api/jobs/route.ts` 和 `src/app/api/jobs/[jobId]/route.ts`；创建请求与任务恢复输入共用 `src/lib/job-validation.ts` 中的 Zod schema。
 
@@ -8,7 +8,9 @@
 
 - 请求体使用 JSON，并应发送 `Content-Type: application/json`。
 - 成功响应为 JSON；错误响应统一为 `{ "error": "中文错误信息" }`。
+- 正式服务切换窗口内，创建和重试返回 `409`，提示稍后重试；构建阶段不限制接收任务。门禁在 `createJob()` 统一执行，适用于各业务入口。
 - 任务创建后立即返回，实际工作由后台队列执行。创建响应中的状态通常是 `queued`，随后可能变为 `running`。
+- 需要持久化、进度、取消和恢复的业务长任务由 `src/lib/jobs.ts` 管理，不以 `after()` 或无人管理的 Promise 替代；分批落盘时递增 `dataRevision` 并写 `dataChange`，客户端按增量失效缓存。
 - `APP_MODE=workspace` 允许所有任务类型；`APP_MODE=gross-margin` 只允许 `gross-margin-refresh`，其他类型返回 `403`。
 - 任务结果因任务类型而异，不能依赖一个固定的 `result` 结构。只有详情接口会返回 `result` / `partialText`（如果任务结果已被持久化压缩，则以 `resultCompacted` 和 `resultSizeBytes` 为准）；列表接口只返回摘要。
 
@@ -33,6 +35,8 @@
 - 没有新变化时：`jobs` 和 `removedJobIds` 都为空，`reset` 为 `false`。
 
 ### 响应
+
+`pendingCreations` 是读取任务列表前正在创建、可能尚未落盘的请求数，供服务切换保护使用；兼容旧服务时该字段可能不存在。
 
 ```json
 {
@@ -72,6 +76,8 @@
 任务记录和恢复载荷新增 `schemaVersion: 1`。没有该字段的旧记录仍可读，恢复载荷保留原有 `version: 1`；未来版本、无效输入或与任务类型不一致的载荷不会执行或改写原记录。合法旧任务继续沿用原恢复策略，图片任务重启后标记中断，不自动重新调用模型。兼容性检查不迁移旧文件，也不保证旧程序能读取未来新增的任务类型。
 
 批量转写在第一条转写前保存固定候选 ID，后续恢复只处理这一批；显式 `videoIds: []` 表示空批次。已启动的旧批次若没有固定候选，会中断并提示确认范围后重新发起。每条转写结果落盘后同步递增 `dataRevision`，不必等待整个批次完成。
+
+候选先去重、筛选待转写项，再应用 `limit` 和有界并发，避免已完成项占用批次上限。相关回归见 `tests/collection-transcription-safety.test.ts`、`tests/jobs-runtime.test.ts`、`tests/job-compatibility.test.ts`。
 
 云端按 D1 中未到期的租约统一执行 `JOB_MAX_ACTIVE`；存活租约不会被其他实例恢复，执行器定期续租并检查取消。取消后仍占用容量直到执行器退出，租约失效的旧执行器不能覆盖新状态。未启动的云端排队任务可被其他实例接手；已启动任务仍按对应类型的恢复规则处理。
 
@@ -143,7 +149,7 @@ type StartJobRequest = {
 ### 创建示例
 
 ```bash
-curl -X POST http://localhost:3000/api/jobs \
+curl -X POST http://127.0.0.1:3002/api/jobs \
   -H 'Content-Type: application/json' \
   -d '{
     "kind": "single-video-transcribe",
@@ -155,6 +161,12 @@ curl -X POST http://localhost:3000/api/jobs \
 ```
 
 创建成功后不要阻塞等待业务结果；保存返回的 `jobId`，用详情接口或任务列表游标轮询。
+
+### 生成任务的业务语义
+
+- `write-copy` 的多卡独立成稿、不可变版本链及原始输入字段见[账号风格链路](../style-writing.md)，首稿与续改的联网行为见[写作联网检索](writer-research.md)。
+- `engagement` 的文本含视频链接或来源为视频 URL 时先取得文稿；链接、平台视频标识不进入 Brief 或成稿。真实平台评论/弹幕样本缺失时显式失败，不用模型编造样本替代。
+- 评论与弹幕部分成功时保留已完成结果，按现有恢复机制补齐失败部分；不能因一侧失败重写另一侧成功内容。相关回归见 `tests/engagement-pipeline.test.ts`、`tests/engagement-danmaku-recovery.test.ts`、`tests/engagement-source-minimum.test.ts`。
 
 ## `GET /api/jobs/:jobId`
 
@@ -193,7 +205,7 @@ curl -X POST http://localhost:3000/api/jobs \
 找不到任务时返回 `404` 和 `{ "error": "找不到任务记录" }`（或对应的中文兜底信息）。
 
 ```bash
-curl http://localhost:3000/api/jobs/job-single-video-transcribe-1720000000000-a1b2c3d4
+curl http://127.0.0.1:3002/api/jobs/job-single-video-transcribe-1720000000000-a1b2c3d4
 ```
 
 ## `PATCH /api/jobs/:jobId`
@@ -213,7 +225,7 @@ curl http://localhost:3000/api/jobs/job-single-video-transcribe-1720000000000-a1
 `action=retry` 只接受终态任务。服务端会读取原任务保存的输入并创建一个新的任务，因此响应中的 `job.id` 是新的任务 ID，不能继续轮询旧 ID。若原任务的恢复参数已被清理，会返回“任务恢复参数缺失，请重新发起”。
 
 ```bash
-curl -X PATCH http://localhost:3000/api/jobs/job-abc \
+curl -X PATCH http://127.0.0.1:3002/api/jobs/job-abc \
   -H 'Content-Type: application/json' \
   -d '{"action":"retry"}'
 ```

@@ -83,11 +83,16 @@ export type EngagementCommentResearch = {
   cacheHit: boolean;
 };
 
-const ENGAGEMENT_RESEARCH_VERSION = "engagement-research-v41-over-200";
+const ENGAGEMENT_RESEARCH_VERSION = "engagement-research-v43-wide-multi-source";
 const RESEARCH_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const PARTIAL_RESEARCH_CACHE_TTL_MS = 30 * 60 * 1000;
-const MAX_RESEARCH_QUERIES = 2;
-const TARGET_PLATFORM_VIDEO_LIMIT = 2;
+const MAX_RESEARCH_QUERIES = 3;
+const TARGET_PLATFORM_VIDEO_LIMIT = 6;
+const CROSS_PLATFORM_VIDEO_LIMIT = 3;
+const COLLECTION_COMMENT_LIMIT = 150;
+const COMMENT_COLLECTION_TARGET = 1500;
+// 采集硬上限：到点就用已拿到的原评继续生成，不无限补来源。
+const COLLECTION_DEADLINE_MS = 120_000;
 
 export type HotCommentSample = {
   platform: Platform;
@@ -245,7 +250,7 @@ export async function buildEngagementCommentResearch(
     .map((row) => `${formatSource(row.source)}｜${row.query}：${row.error}`);
   const uniqueCapturedCount = new Set(capturedSamples.map((row) => commentCorpusKey(row.text))).size;
   const partialReasons = [
-    uniqueCapturedCount < 600 ? `去重原评 ${uniqueCapturedCount}/600 条，已用完可用候选或采集受限，按现有语料生成` : "",
+    uniqueCapturedCount < COMMENT_COLLECTION_TARGET ? `去重原评 ${uniqueCapturedCount}/${COMMENT_COLLECTION_TARGET} 条，已用完可用候选或采集受限，按现有语料生成` : "",
     ...sourceStats.filter((source) => source.status !== "completed").map((source) => `${formatSource(source.source)}：${source.error || "覆盖不完整"}`),
     quarantine.classifierError ? `人机评论源复核降级：${quarantine.classifierError}` : ""
   ].filter(Boolean) as string[];
@@ -253,7 +258,7 @@ export async function buildEngagementCommentResearch(
   const intentBuckets = summarizeIntentBuckets(researchSamples);
   const videoKeys = new Set(rankedFreshSamples.map((sample) => `${sample.platform}:${sample.videoId}`));
   const research: EngagementCommentResearch = {
-    collectionCoverage: { target: 600, uniqueCount: uniqueCapturedCount, attemptedVideoCount: platformRows.reduce((sum, row) => sum + (row.collectionAttempts?.length || 0), 0), targetReached: uniqueCapturedCount >= 600 },
+    collectionCoverage: { target: COMMENT_COLLECTION_TARGET, uniqueCount: uniqueCapturedCount, attemptedVideoCount: platformRows.reduce((sum, row) => sum + (row.collectionAttempts?.length || 0), 0), targetReached: uniqueCapturedCount >= COMMENT_COLLECTION_TARGET },
     referenceTextChars: JSON.stringify(groupCommentVoiceReferences(rankedFreshSamples)).length,
     capturedSamples,
     referenceSamples: rankedFreshSamples,
@@ -487,8 +492,13 @@ function isUsableResearchCache(cached: {
 }
 
 export function buildPlatformResearchTasks(query: string, targetPlatform: Platform) {
-  const platforms: Platform[] = targetPlatform === "bilibili" ? ["bilibili"] : ["douyin", "bilibili"];
-  return platforms.map((source) => ({ source, query, videoLimit: TARGET_PLATFORM_VIDEO_LIMIT }));
+  // 目标平台多取几个来源，另一个平台只要少量做跨平台参考，两个平台并行采集。
+  const platforms: Platform[] = uniqueText([targetPlatform, targetPlatform === "bilibili" ? "douyin" : "bilibili"]) as Platform[];
+  return platforms.map((source) => ({
+    source,
+    query,
+    videoLimit: source === targetPlatform ? TARGET_PLATFORM_VIDEO_LIMIT : CROSS_PLATFORM_VIDEO_LIMIT
+  }));
 }
 
 async function collectPlatformResearch(
@@ -499,11 +509,12 @@ async function collectPlatformResearch(
   onProgress?: ResearchProgress
 ) {
   const targetPlatform = platform || "douyin";
-  const collectionBudget = createCommentCollectionBudget(600);
-  const results = await Promise.allSettled(buildPlatformResearchTasks("", targetPlatform).map(async ({ source }) => {
-    const searchScope = targetPlatform === "bilibili" ? "仅搜索 B站" : `正在搜索${formatSource(source)}`;
-    await onProgress?.(`${searchScope}，按关键词查找相关视频，先尝试 2 个视频，语料不足继续补来源（每平台最多 4 个）`);
-    return [await collectPlatformResearchRow({ source, queries, videoLimit: TARGET_PLATFORM_VIDEO_LIMIT }, excludedVideoIds, signal, collectionBudget)];
+  const collectionBudget = createCommentCollectionBudget(COMMENT_COLLECTION_TARGET);
+  const deadlineMs = Date.now() + COLLECTION_DEADLINE_MS;
+  const results = await Promise.allSettled(buildPlatformResearchTasks("", targetPlatform).map(async (task) => {
+    const searchScope = task.source === targetPlatform ? `正在搜索${formatSource(task.source)}` : `正在补充${formatSource(task.source)}参考`;
+    await onProgress?.(`${searchScope}，先取 ${task.videoLimit} 个来源，语料不足继续补候选`);
+    return [await collectPlatformResearchRow({ ...task, queries }, excludedVideoIds, signal, collectionBudget, deadlineMs)];
   }));
   throwIfAborted(signal);
   return results.flatMap((result) => {
@@ -516,18 +527,20 @@ async function collectPlatformResearchRow(
   task: { source: Platform; queries: string[]; videoLimit: number },
   excludedVideoIds: string[],
   signal?: AbortSignal,
-  collectionBudget?: CommentCollectionBudget
+  collectionBudget?: CommentCollectionBudget,
+  deadlineMs?: number
 ): Promise<PlatformResearchRow> {
   throwIfAborted(signal);
   const started = Date.now();
   try {
     const collectedAt = nowIso();
+    const maxVideoAttempts = Math.min(task.videoLimit + 2, 8);
     const result = task.source === "bilibili"
       ? await getBilibiliRelatedTopicComments(task.queries, {
-          videoLimit: task.videoLimit, maxVideoAttempts: 4, collectionBudget, commentLimit: 200, replyLimit: 0, excludedVideoIds, signal
+          videoLimit: task.videoLimit, maxVideoAttempts, collectionBudget, commentLimit: COLLECTION_COMMENT_LIMIT, replyLimit: 0, excludedVideoIds, signal, deadlineMs
         })
       : await getDouyinRelatedTopicComments(task.queries, {
-          videoLimit: task.videoLimit, maxVideoAttempts: 4, collectionBudget, commentLimit: 200, excludedVideoIds, signal
+          videoLimit: task.videoLimit, maxVideoAttempts, collectionBudget, commentLimit: COLLECTION_COMMENT_LIMIT, excludedVideoIds, signal, deadlineMs
         });
     const videos = task.source === "bilibili"
       ? result.videos.map((video) => ({

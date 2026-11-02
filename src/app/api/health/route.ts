@@ -6,7 +6,6 @@ import { NextResponse } from "next/server";
 import { libraryRoot } from "@/lib/storage";
 import { getChatRuntimeConfig } from "@/lib/ai";
 import { getImageRuntimeConfig } from "@/lib/image-runtime";
-import { getPiStatus } from "@/lib/pi-runtime";
 import { checkFeishuRuntime } from "@/lib/feishu";
 import { probeChatModel } from "@/lib/model-runtime";
 import { resolveOpenCliCommand } from "@/lib/opencli";
@@ -52,10 +51,9 @@ export async function GET(request: Request) {
 
   const chat = getChatRuntimeConfig();
   const image = getImageRuntimeConfig();
-  const [chatProbe, feishu, pi] = await Promise.all([
+  const [chatProbe, feishu] = await Promise.all([
     probeChatModel({ signal: request.signal }),
-    checkFeishuRuntime(),
-    getPiStatus()
+    checkFeishuRuntime()
   ]);
 
   return NextResponse.json({
@@ -70,8 +68,7 @@ export async function GET(request: Request) {
       process.env.VOLCENGINE_API_KEY ||
       (process.env.VOLCENGINE_ASR_APP_KEY && process.env.VOLCENGINE_ASR_ACCESS_KEY)
     ),
-    chatConfigured: pi.configured || chat.configured,
-    pi,
+    chatConfigured: chat.configured,
     chatReachable: chatProbe.ok,
     chat,
     chatProbe,

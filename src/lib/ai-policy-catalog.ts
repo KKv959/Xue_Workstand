@@ -1,7 +1,7 @@
 export const AI_EFFORTS = ["none", "low", "medium", "high", "xhigh"] as const;
 export type AiEffort = typeof AI_EFFORTS[number];
 export const AI_GROUPS = ["全部链路", "热点分析", "风格学习", "对话写作", "评论与弹幕", "发布工具", "图片与素材"] as const;
-export type AiPolicyValue = { model: string; effort: AiEffort | "default"; source?: "auto" | "subscription" | "relay" };
+export type AiPolicyValue = { model: string; effort: AiEffort | "default"; source?: "relay" };
 export const AI_POLICIES = [
   { id: "trendradar", group: "热点分析", title: "TrendRadar 报告", description: "热点兴趣筛选、趋势分析与报告翻译共用此配置。", model: "gpt-5.6-sol", effort: "default" },
   { id: "account_sample", group: "风格学习", title: "历史账号样本分析", description: "已改为原文直接归纳，仅保留历史配置兼容。", model: "", effort: "medium", retired: true },

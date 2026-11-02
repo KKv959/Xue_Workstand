@@ -359,7 +359,7 @@ function formatTimingError(error: unknown) {
 
 export function wrapOpenCliError(error: unknown) {
   if (isMissingExecutableError(error)) {
-    return new Error("未检测到 opencli。数据维护 / 数据监控页面可以继续使用，但实时刷新 B站/抖音数据前请先运行 install-deps.cmd 安装 opencli。");
+    return new Error("未检测到 opencli。数据维护 / 数据监控页面可以继续使用；如需刷新 B站/抖音数据，请先安装 opencli 并运行 opencli doctor 检查浏览器连接。");
   }
   if (error instanceof Error) {
     if (error.name === "AbortError") return error;

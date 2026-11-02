@@ -42,7 +42,7 @@ test("图片助手默认 gpt-6.1-sol high，其他对话仍用原配置", async 
   assert.ok(address && typeof address === "object");
   try {
     for (const key of Object.keys(process.env)) if (/^(CHAT_|OPENAI_|FHL_)/.test(key)) delete process.env[key];
-    Object.assign(process.env, { STYLE_LIBRARY_DIR: library, PI_ENABLED: "0", CHAT_API_KEY: "fixture", CHAT_BASE_URL: `http://127.0.0.1:${address.port}`, CHAT_MODEL: "original-model", CHAT_WIRE_API: "chat_completions", CHAT_FALLBACK_ENABLED: "0" });
+    Object.assign(process.env, { STYLE_LIBRARY_DIR: library, CHAT_API_KEY: "fixture", CHAT_BASE_URL: `http://127.0.0.1:${address.port}`, CHAT_MODEL: "original-model", CHAT_WIRE_API: "chat_completions", CHAT_FALLBACK_ENABLED: "0" });
     await assistImagePrompt({ prompt: "一只猫", mode: "polish" });
     assert.equal(requests[0].model, "gpt-6.1-sol");
     assert.equal(requests[0].reasoning_effort, "high");

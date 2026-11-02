@@ -2,12 +2,11 @@
 
 import { useState, type CSSProperties } from "react";
 import { Send } from "lucide-react";
-import type { BusyState } from "./asset-view-utils";
 import { SourceInput } from "./SourceInput";
 import type { Platform } from "@/lib/types";
 
 type EngagementGeneratorPaneProps = {
-  busy: BusyState;
+  isGenerating: boolean;
   canGenerate: boolean;
   commentCount: number;
   danmakuCount: number;
@@ -31,7 +30,7 @@ type EngagementGeneratorPaneProps = {
 };
 
 export function EngagementGeneratorPane({
-  busy,
+  isGenerating,
   canGenerate,
   commentCount,
   danmakuCount,
@@ -75,7 +74,6 @@ export function EngagementGeneratorPane({
               <button
                 aria-pressed={targetPlatform === "douyin"}
                 className={targetPlatform === "douyin" ? "active" : ""}
-                disabled={busy === "generate"}
                 onClick={() => onTargetPlatformChange("douyin")}
                 title="视频链接会自动识别；此选项用于粘贴文案"
                 type="button"
@@ -85,7 +83,6 @@ export function EngagementGeneratorPane({
               <button
                 aria-pressed={targetPlatform === "bilibili"}
                 className={targetPlatform === "bilibili" ? "active" : ""}
-                disabled={busy === "generate"}
                 onClick={() => onTargetPlatformChange("bilibili")}
                 title="视频链接会自动识别；此选项用于粘贴文案"
                 type="button"
@@ -147,7 +144,7 @@ export function EngagementGeneratorPane({
             </div>
             <button className="btn primary engagement-submit" disabled={!canGenerate} onClick={onGenerate} type="button">
               <Send aria-hidden="true" size={16} />
-              {busy === "generate" ? "正在生成" : "生成评论"}
+              {isGenerating ? "正在生成" : "生成评论"}
             </button>
           </div>
           {generationProgress ? (

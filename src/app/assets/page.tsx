@@ -65,6 +65,9 @@ function AssetsPageContent() {
   const {
     activeTitle,
     canGenerate,
+    isSubmitting,
+    isGenerating,
+    isViewingGeneration,
     generationProgress,
     handleGenerate,
     previewComments,
@@ -72,7 +75,6 @@ function AssetsPageContent() {
     setResultRecord
   } = useEngagementGeneration({
     activeJobs,
-    busy,
     commentCount,
     danmakuCount,
     includeComments,
@@ -80,7 +82,6 @@ function AssetsPageContent() {
     onRecordCompleted: handleRecordCompleted,
     targetPlatform,
     recentJobs,
-    setBusy,
     setNotice,
     sourceInput,
     startTask
@@ -295,7 +296,7 @@ function AssetsPageContent() {
         <section className="panel engagement-main">
           <div className="engagement-content-grid">
             <EngagementGeneratorPane
-              busy={busy}
+              isGenerating={isGenerating || isSubmitting}
               canGenerate={canGenerate}
               commentCount={commentCount}
               danmakuCount={danmakuCount}
@@ -316,6 +317,7 @@ function AssetsPageContent() {
 
             <EngagementResultsPane
               busy={busy}
+              isGenerating={isViewingGeneration}
               includeDanmaku={includeDanmaku}
               previewComments={previewComments}
               resultRecord={resultRecord}

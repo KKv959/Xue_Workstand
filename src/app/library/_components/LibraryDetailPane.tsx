@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { ArrowUpRight, Download, ExternalLink, FileText, RefreshCw, Sparkles, WandSparkles } from "lucide-react";
+import { Download, ExternalLink, FileText, RefreshCw, Sparkles, WandSparkles } from "lucide-react";
 import { formatDate } from "@/components/Formatters";
 import type { AccountDetail, VideoListItem } from "@/lib/types";
 
@@ -89,10 +89,12 @@ export const LibraryDetailPane = memo(function LibraryDetailPane({
             ) : selectedVideo?.title || "未选择视频"}
           </p>
           {selectedVideoHasTranscript ? (
-            <button className="detail-excerpt" aria-label={transcriptError ? "重试读取原稿" : "查看 / 编辑原稿"} aria-busy={transcriptLoading} disabled={transcriptLoading || busy === "transcribe"} onClick={onOpenTranscriptModal} type="button">
-              <span className={`detail-excerpt-body${transcriptError ? " detail-excerpt-error" : ""}`}>{transcriptError || transcriptPreviewText}</span>
-              <span className="detail-excerpt-footer">{transcriptLoading ? "读取中…" : transcriptError ? "重试读取" : "阅读全文"}<ArrowUpRight aria-hidden="true" size={16} /></span>
-            </button>
+            <>
+              <p className={`detail-preview-text detail-transcript-preview${transcriptError ? " detail-excerpt-error" : ""}`}>{transcriptError || transcriptPreviewText}</p>
+              <button className="btn" aria-label={transcriptError ? "重试读取原稿" : "查看 / 编辑原稿"} aria-busy={transcriptLoading} disabled={transcriptLoading || busy === "transcribe"} onClick={onOpenTranscriptModal} type="button">
+                <FileText aria-hidden="true" size={16} />{transcriptLoading ? "读取中…" : transcriptError ? "重试读取" : "查看 / 编辑原稿"}
+              </button>
+            </>
           ) : (
             <>
               <p className="detail-empty-preview">{transcriptPreviewText}</p>

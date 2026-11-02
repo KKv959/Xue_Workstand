@@ -5,15 +5,15 @@ import { selectEligibleCommentSources, sourceCommentCount } from "../src/lib/eng
 import { getDouyinRelatedTopicComments } from "../src/lib/opencli";
 import { getBilibiliRelatedTopicComments } from "../src/lib/opencli-bilibili";
 
-test("来源门槛拒绝200及以下和未知，201、224、266条入选", async () => {
+test("来源门槛拒绝20及以下和未知，21、224、266条入选", async () => {
   const fetched: string[] = [];
   const result = await selectEligibleCommentSources([
-    { id: "low", commentCount: 199 }, { id: "boundary", commentCount: 200 }, { id: "missing" }, { id: "valid" },
+    { id: "low", commentCount: 19 }, { id: "boundary", commentCount: 20 }, { id: "missing" }, { id: "valid" },
     { id: "middle", commentCount: 224 }, { id: "higher", commentCount: 266 }, { id: "unused" }
-  ], 3, async (video) => { fetched.push(video.id); return video.id === "valid" ? 201 : undefined; });
-  assert.deepEqual(result.videos, [{ id: "valid", commentCount: 201 }, { id: "middle", commentCount: 224 }, { id: "higher", commentCount: 266 }]);
+  ], 3, async (video) => { fetched.push(video.id); return video.id === "valid" ? 21 : undefined; });
+  assert.deepEqual(result.videos, [{ id: "valid", commentCount: 21 }, { id: "middle", commentCount: 224 }, { id: "higher", commentCount: 266 }]);
   assert.deepEqual(fetched, ["missing", "valid"]);
-  assert.match(result.errors.join("；"), /199.*超过 200.*评论总数 200.*无法确认评论总数/);
+  assert.match(result.errors.join("；"), /19.*超过 20.*评论总数 20.*无法确认评论总数/);
   for (const value of [undefined, null, "", "很多", NaN, -1, 299.9, [], true]) assert.equal(sourceCommentCount(value), undefined);
   assert.equal(sourceCommentCount("300"), 300);
 });
@@ -34,14 +34,14 @@ test("计数核验取消和访问限制不会放行未知来源", async () => {
 test("批量核验按排名分块，凑够来源即停；单条失败跳过，风控中止", async () => {
   const chunks: string[][] = [];
   const ids = ["a", "b", "c", "d", "e", "f", "g"];
-  const counts: Record<string, number | Error> = { a: 50, b: new Error("超时"), c: 300, d: 201, e: 400, f: 500, g: 600 };
+  const counts: Record<string, number | Error> = { a: 19, b: new Error("超时"), c: 300, d: 201, e: 400, f: 500, g: 600 };
   const result = await selectEligibleCommentSources(ids.map((id) => ({ id })), 2, {
     batchSize: 3,
     async resolveMany(videos) { chunks.push(videos.map((video) => video.id)); return new Map(videos.map((video) => [video.id, counts[video.id]])); }
   });
   assert.deepEqual(chunks, [["a", "b", "c"], ["d", "e", "f"]], "第二块凑够后不再核验第三块");
   assert.deepEqual(result.videos.map((video) => video.id), ["c", "d"]);
-  assert.match(result.errors.join("；"), /a：评论总数 50 条.*b：评论总数核验失败，已跳过：超时/);
+  assert.match(result.errors.join("；"), /a：评论总数 19 条.*b：评论总数核验失败，已跳过：超时/);
 
   const known = await selectEligibleCommentSources([{ id: "x", commentCount: 300 }, { id: "y" }], 2, {
     batchSize: 4, resolveMany: async (videos) => { assert.deepEqual(videos.map((video) => video.id), ["y"], "已有评论数不重复核验"); return new Map([["y", 250]]); }
@@ -62,7 +62,7 @@ test("批量核验按排名分块，凑够来源即停；单条失败跳过，�
   }, controller.signal), /用户取消/);
 });
 
-test("双平台真实适配链路先核验详情，200条来源跳过、201条来源进入评论分页", async () => {
+test("双平台真实适配链路先核验详情，20条来源跳过、21条来源进入评论分页", async () => {
   const env = { ...process.env };
   for (const key of Object.keys(process.env)) if (/^OPENCLI_/.test(key)) delete process.env[key];
   Object.assign(process.env, { OPENCLI_NODE_BIN: process.execPath,
@@ -71,9 +71,9 @@ test("双平台真实适配链路先核验详情，200条来源跳过、201条�
   try {
     const douyin = await getDouyinRelatedTopicComments("手机", { videoLimit: 2, commentLimit: 200 });
     const bili = await getBilibiliRelatedTopicComments("手机", { videoLimit: 2, commentLimit: 200, replyLimit: 0 });
-    assert.deepEqual(douyin.videos.map((v) => [v.id, v.commentCount]), [["2222222222222222222", 201]]);
+    assert.deepEqual(douyin.videos.map((v) => [v.id, v.commentCount]), [["2222222222222222222", 21]]);
     assert.equal(bili.videos[0].views, 999);
-    assert.deepEqual(bili.videos.map((v) => [v.id, v.commentCount]), [["BV2xx411c7mD", 201]]);
+    assert.deepEqual(bili.videos.map((v) => [v.id, v.commentCount]), [["BV2xx411c7mD", 21]]);
     for (const result of [douyin, bili]) {
       assert.equal(result.comments.length, 200);
       assert.equal(result.collectionAttempts?.length, 1, "低评论和未知来源不得发起评论分页");

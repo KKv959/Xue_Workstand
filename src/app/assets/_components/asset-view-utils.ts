@@ -1,7 +1,7 @@
 import { formatPlatform } from "@/components/Formatters";
 import type { Draft, EngagementSourceType } from "@/lib/types";
 
-export type BusyState = "generate" | "feishu-comments" | "feishu-danmaku" | "export-word" | "";
+export type BusyState = "feishu-comments" | "feishu-danmaku" | "export-word" | "";
 
 export function getDraftReferenceLabel(draft: Draft) {
   return draft.targetType === "project" ? `项目 ${draft.projectName}` : `${formatPlatform(draft.platform)} / ${draft.accountName}`;

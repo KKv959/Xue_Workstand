@@ -18,7 +18,15 @@ test("旧终态任务不挡住同范围的新任务与快速完成的重试", ()
   const running = { ...failed, id: "new", status: "running", createdAt: "2026-10-06T00:01:00Z" } as JobRecord;
   assert.equal(findTaskJob([failed, running], failed.id, "engagement", () => true)?.id, running.id);
   assert.equal(findTaskJob([failed, { ...running, status: "completed" }], failed.id, "engagement", () => true)?.id, running.id);
-  assert.equal(findTaskJob([failed, running], running.id, "engagement", () => false)?.id, running.id);
+  assert.equal(findTaskJob([failed, running], running.id, "engagement", () => false), null);
+});
+
+test("切换内容后只绑定当前范围的任务，不被其它生成占用", () => {
+  const first = { id: "first", kind: "engagement", status: "running", createdAt: "2026-10-06T00:00:00Z" } as JobRecord;
+  const second = { ...first, id: "second", status: "queued" } as JobRecord;
+  assert.equal(findTaskJob([first, second], first.id, "engagement", job => job.id === second.id)?.id, second.id);
+  assert.equal(findTaskJob([first], first.id, "engagement", () => false), null);
+  assert.equal(findTaskJob([first], first.id, "engagement", () => true)?.id, first.id);
 });
 
 test("旧检查点恢复先过滤污染与重复，再按实际缺口补写", async () => {

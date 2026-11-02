@@ -4,7 +4,7 @@ import process from "process";
 
 const platforms = ["bilibili", "douyin"];
 const grossMarginPlatforms = ["bilibili", "douyin"];
-const grossMarginServices = ["play", "like", "douPlus", "coin", "comment", "share", "favorite", "danmaku", "blueLink"];
+const grossMarginServices = ["play", "like", "douPlus", "coin", "comment", "share", "favorite", "danmaku", "blueLink", "mustFire"];
 const root = path.resolve(process.cwd(), process.env.STYLE_LIBRARY_DIR || "style-library");
 const repairMode = process.argv.includes("--repair");
 const issues = [];

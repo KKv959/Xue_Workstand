@@ -26,8 +26,8 @@ if (args[0] === "douyin" || args[0] === "bilibili") {
       if (process.env.COMMENT_TEST_FAIL_PLATFORM === (bilibili ? "bilibili" : "douyin")) return { ok: false, status: 403 };
       let payload;
       if (url.pathname.endsWith("/nav")) payload = { code: 0, data: { isLogin: true, wbi_img: { img_url: "https://i.example/" + "a".repeat(32) + ".png", sub_url: "https://i.example/" + "b".repeat(32) + ".png" } } };
-      else if (url.pathname.endsWith("/view")) payload = { code: 0, data: { aid: sparse ? Number(url.searchParams.get("bvid")[2]) : 123, stat: threshold ? (url.searchParams.get("bvid")[2] === "1" ? { reply: 200 } : url.searchParams.get("bvid")[2] === "2" ? { reply: 201 } : {}) : { reply: 300 } } };
-      else if (url.pathname === "/aweme/v1/web/aweme/detail/") payload = { aweme_detail: { statistics: threshold ? (url.searchParams.get("aweme_id")[0] === "1" ? { comment_count: 200 } : url.searchParams.get("aweme_id")[0] === "2" ? { comment_count: 201 } : {}) : { comment_count: 300 } } };
+      else if (url.pathname.endsWith("/view")) payload = { code: 0, data: { aid: sparse ? Number(url.searchParams.get("bvid")[2]) : 123, stat: threshold ? (url.searchParams.get("bvid")[2] === "1" ? { reply: 20 } : url.searchParams.get("bvid")[2] === "2" ? { reply: 21 } : {}) : { reply: 300 } } };
+      else if (url.pathname === "/aweme/v1/web/aweme/detail/") payload = { aweme_detail: { statistics: threshold ? (url.searchParams.get("aweme_id")[0] === "1" ? { comment_count: 20 } : url.searchParams.get("aweme_id")[0] === "2" ? { comment_count: 21 } : {}) : { comment_count: 300 } } };
       else if (bilibili) {
         const next = Number(url.searchParams.get("next"));
         payload = { code: 0, data: { cursor: { next: next + 1, is_end: next === 3 }, replies: Array.from({ length: 50 }, (_, i) => ({ rpid_str: String(next * 50 + i + 1), content: { message: "B站参考句子" + (next * 50 + i) }, like: i, rcount: 0 })) } };

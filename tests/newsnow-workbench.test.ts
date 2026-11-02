@@ -40,6 +40,12 @@ test("嵌入消息必须匹配协议和有效进度", () => {
   assert.equal(isNewsNowWorkbenchMessage({ channel: "workbench-newsnow", version: 1, type: "state", state }), true);
   assert.equal(isNewsNowWorkbenchMessage({ channel: "other", version: 1, type: "state", state }), false);
   assert.equal(isNewsNowWorkbenchMessage({ channel: "workbench-newsnow", version: 1, type: "state", state: { ...state, completed: 31 } }), false);
+  const message = { channel: "workbench-newsnow", version: 1, type: "state", state,
+    layout: { schemaVersion: 1, order: ["a", "b"], hidden: ["b"] } };
+  assert.equal(isNewsNowWorkbenchMessage(message), true);
+  assert.equal(isNewsNowWorkbenchMessage({ ...message, layout: { ...message.layout, schemaVersion: 2 } }), false);
+  assert.equal(isNewsNowWorkbenchMessage({ ...message, layout: { ...message.layout, order: [42] } }), false);
+  assert.equal(isNewsNowWorkbenchMessage({ ...message, layout: { ...message.layout, order: Array(31).fill("a") } }), false);
 });
 
 test("NewsNow 适配器版本不匹配时明确失败，部署原样保留", async () => {

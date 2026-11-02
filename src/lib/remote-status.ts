@@ -4,7 +4,6 @@ import { promisify } from "util";
 import packageJson from "../../package.json";
 import { getChatRuntimeConfig, getWebResearchCapability } from "./ai";
 import { getImageRuntimeConfig } from "./image-runtime";
-import { getPiStatus } from "./pi-runtime";
 import { getAppMode } from "./app-mode";
 import { resolveOpenCliCommand } from "./opencli-runtime";
 import { libraryRoot } from "./storage";
@@ -56,15 +55,12 @@ async function buildRemoteStatus(): Promise<RemoteStatusResponse> {
   const opencli = localOpenCli || service("unavailable", "OpenCLI 状态未知");
   const ffmpeg = localFfmpeg || service("unavailable", "ffmpeg 状态未知");
   const browserBridge = await checkBrowserBridge(opencli.status === "ok");
-  const pi = await getPiStatus();
   const services = {
     storage,
     opencli,
     browserBridge,
     ffmpeg,
-    chat: pi.configured ? service("ok", pi.message) : pi.enabled && chat.configured
-      ? service("ok", `${pi.message}；原中转站 ${chat.model} 已配置`)
-      : chat.configured
+    chat: chat.configured
       ? service("ok", `已配置 ${chat.model}`)
       : service("unconfigured", "未配置对话模型"),
     image: image.configured
@@ -117,8 +113,19 @@ async function checkBrowserBridge(openCliAvailable: boolean): Promise<RemoteServ
       maxBuffer: 1024 * 1024,
       windowsHide: true
     });
-    const output = `${stdout}\n${stderr}`;
-    if (/(?:Extension|Browser Bridge)[^\n]*(?:connected|已连接)|:\s*connected\b/i.test(output)) {
+    let connected = false;
+    try {
+      const report = JSON.parse(stdout);
+      connected = report?.ok === true && report.data?.daemonRunning === true &&
+        report.data.extensionConnected === true && report.data.connectivity?.ok === true;
+    } catch {
+      // 兼容旧版文本；JSON 损坏时不从字段名或提示文字猜测连接状态。
+      const output = `${stdout}\n${stderr}`;
+      connected = !stdout.trimStart().startsWith("{") && output.split("\n").some(line =>
+        /(?:Extension|Browser Bridge|:)/i.test(line) && /\bconnected\b|已连接/i.test(line) &&
+        !/\b(?:disconnected|not\s+connected)\b|未连接/i.test(line));
+    }
+    if (connected) {
       return service("ok", "浏览器桥接已连接");
     }
     return service("unavailable", "浏览器桥接未连接，请保持 Chrome 扩展在线");

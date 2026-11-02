@@ -102,7 +102,7 @@ export function ImageControls({ workbench: w, onLocate, onUpload, draggedImage }
     {w.multiModels.length > 1 ? <small className="image-batch-hint">{w.multiModels.length} 个模型 × {w.form.count} 张，共 {w.multiModels.length * w.form.count} 张</small> : null}
     {expanded && w.error ? <p className="error image-expanded-error" role="alert">{w.error}</p> : null}
     {w.uploading ? <small role="status">正在保存参考图…</small> : null}
-    {selectedProfile && !selectedProfile.configured ? <p className="error" role="alert">{selectedProfile.model === "ChatGPT 订阅生图" ? "请在本机 AI 模型配置连接 ChatGPT 订阅（Codex）；云端暂不支持订阅生图。" : "所选图片服务未配置，请检查对应模型的 API 配置。"}</p> : null}
+    {selectedProfile && !selectedProfile.configured ? <p className="error" role="alert">所选图片服务未配置，请检查对应模型的 API 配置。</p> : null}
   </form>;
 }
 export function ImageSettings({ workbench: w }: { workbench: Workbench }) {

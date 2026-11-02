@@ -188,3 +188,47 @@ test("已取消任务有更高数据修订时重新读取结果；读取失败�
   cache.set(summary.id, { ...summary, result: { content: "新结果" } });
   assert.equal(functions.shouldHydrateJob(summary, 0, new Map(), cache, "/writer"), false);
 });
+
+test("后台写作期间切换历史稿，流式更新和完成结果不覆盖新编辑，可继续续改", async () => {
+  const state = writer(async input => ({ ...draft("manual"), ...input }));
+  const saved: string[] = [];
+  state.input.onDraftSaved = item => { saved.push(item.id); };
+  const job: JobRecord = { id: "background", kind: "write-copy", status: "running", title: "后台写作", message: "生成中", progress: 30,
+    createdAt: "2026-10-29T00:00:00Z", updatedAt: "2026-10-29T00:00:00Z" };
+  state.input.startTask = async () => job;
+  await state.render().handleGenerate();
+  state.input.activeJobs = [{ ...job, partialText: "后台正文" }];
+  state.render(); state.syncJob();
+  assert.equal(state.input.busy, "generate");
+  state.render().loadDraftResult(draft("history"));
+  state.render().handleContentChange("历史稿未保存编辑");
+  state.render(); state.syncJob();
+  assert.equal(state.input.busy, "");
+  assert.equal(state.render().lastContent, "历史稿未保存编辑");
+  assert.equal(state.render().canRevise, true);
+  const completed = draft("background-result", "后台完成正文");
+  state.input.activeJobs = [];
+  state.input.recentJobs = [{ ...job, status: "completed", result: { draft: completed, content: completed.content, usedModel: "mock", fallback: false } }];
+  state.render(); state.syncJob();
+  assert.equal(state.render().lastDraftId, "history");
+  assert.equal(state.render().lastContent, "历史稿未保存编辑");
+  assert.deepEqual(saved, ["background-result"]);
+});
+
+test("新建任务解除旧任务绑定，相同输入不会自动抢回；允许提交下一任务", async () => {
+  const state = writer(async () => { throw new Error("Unexpected save"); });
+  let starts = 0;
+  const job: JobRecord = { id: "first", kind: "write-copy", status: "running", title: "写作", message: "生成中", progress: 30,
+    scope: { targetType: "account", accountId: "a", sourceKey: "test" },
+    createdAt: "2026-10-29T00:00:00Z", updatedAt: "2026-10-29T00:00:00Z" };
+  state.input.startTask = async () => ({ ...job, id: ++starts === 1 ? "first" : "second" });
+  await state.render().handleGenerate();
+  state.input.activeJobs = [job];
+  state.render(); state.syncJob();
+  state.render().clearDraftResult();
+  state.render(); state.syncJob();
+  assert.equal(state.input.busy, "");
+  assert.equal(state.render().canGenerate, true);
+  await state.render().handleGenerate();
+  assert.equal(starts, 2);
+});

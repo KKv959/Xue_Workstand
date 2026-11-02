@@ -21,6 +21,7 @@ import {
   readTranscript,
   resolveDraft,
   saveDraft,
+  saveStyle,
   saveTranscript,
   saveVideos,
   upsertAccount,
@@ -163,6 +164,8 @@ test("多选风格会拆成互不混合的独立写作上下文", async () => {
   await withTemporaryLibrary(async () => {
     const account = await upsertAccount({ platform: "bilibili", name: "数码风格", uid: "context-account" });
     const other = await upsertAccount({ platform: "douyin", name: "游戏风格", uid: "other-context-account" });
+    await saveStyle(account.platform, account.id, "数码风格：先说结论，用具体参数和体验说明。");
+    await saveStyle(other.platform, other.id, "游戏风格：以场景开篇，用轻松口吻解释操作。");
     const prepared = await prepareWriteCopyBatchContext({
       styleRefs: [
         { targetType: "account", platform: account.platform, accountId: account.id },
@@ -186,6 +189,7 @@ test("多选风格会拆成互不混合的独立写作上下文", async () => {
 test("写作历史会单独保存原始素材输入", async () => {
   await withTemporaryLibrary(async () => {
     const account = await upsertAccount({ platform: "bilibili", name: "原始输入测试", uid: "original-source-input" });
+    await saveStyle(account.platform, account.id, "先交代事实，再用短句解释，保留原始素材的重点。");
     const originalSourceInput = "第一段素材，保留这里的原始排版。\n\n\n第二段素材，前面有三个换行。";
     const prepared = await prepareWriteCopyContext({
       styleRefs: [{ targetType: "account", platform: account.platform, accountId: account.id }],
@@ -298,6 +302,7 @@ test("已成功读取的支持文档会跨写作风格复用缓存", async () =>
       upsertAccount({ platform: "bilibili", name: "缓存风格一", uid: "support-cache-style-1" }),
       upsertAccount({ platform: "douyin", name: "缓存风格二", uid: "support-cache-style-2" })
     ]);
+    await Promise.all([firstStyle, secondStyle].map(account => saveStyle(account.platform, account.id, `${account.name}：先交代场景，再展开具体信息。`)));
     const contexts = await Promise.all([firstStyle, secondStyle].map((account) => prepareWriteCopyContext({
       styleRefs: [{ targetType: "account", platform: account.platform, accountId: account.id }],
       mode: "topic",

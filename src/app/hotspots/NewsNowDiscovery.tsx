@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { CircleAlert, ExternalLink, PanelsTopLeft, RefreshCw, Square } from "lucide-react";
 import { getNewsNowStatus } from "@/lib/client";
 import { NEWSNOW_BRIDGE_CHANNEL, NEWSNOW_BRIDGE_VERSION, NEWSNOW_ORIGIN, NEWSNOW_URL, type NewsNowStatus, type NewsNowWorkbenchCommand, type NewsNowWorkbenchState } from "@/lib/newsnow";
-import { isNewsNowWorkbenchMessage } from "@/lib/newsnow-workbench-state";
+import { isNewsNowWorkbenchMessage, NEWSNOW_LAYOUT_KEY } from "@/lib/newsnow-workbench-state";
 
 const themeTokens = ["--bg", "--panel", "--panel-soft", "--text", "--text-strong", "--muted", "--line", "--line-strong", "--accent", "--accent-tint", "--rose", "--overlay", "--glass-popover", "--glass-blur", "--shadow-float", "--control-radius", "--radius-lg", "--motion-base", "--motion-slow"];
 
@@ -14,6 +14,9 @@ export function NewsNowDiscovery({ navigation }: { navigation: ReactNode }) {
   const [slow, setSlow] = useState(false);
   const [workbench, setWorkbench] = useState<NewsNowWorkbenchState | null>(null);
   const [bridgeError, setBridgeError] = useState("");
+  const [layoutError, setLayoutError] = useState("");
+  const savedLayout = useRef<string | null>(null);
+  const bridgeReady = useRef(false);
   const frame = useRef<HTMLIFrameElement>(null);
   const manage = useRef<HTMLButtonElement>(null);
   const command = useCallback((type: NewsNowWorkbenchCommand["type"]) => {
@@ -22,6 +25,12 @@ export function NewsNowDiscovery({ navigation }: { navigation: ReactNode }) {
       const style = getComputedStyle(document.documentElement);
       message.tokens = Object.fromEntries(themeTokens.map(token => [token, style.getPropertyValue(token).trim()]));
       message.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      try {
+        message.layout = window.localStorage.getItem(NEWSNOW_LAYOUT_KEY);
+        savedLayout.current = message.layout;
+      } catch {
+        setLayoutError("无法读取工作台的卡片偏好，请检查浏览器存储权限。");
+      }
     }
     frame.current?.contentWindow?.postMessage(message, NEWSNOW_ORIGIN);
   }, []);
@@ -48,7 +57,22 @@ export function NewsNowDiscovery({ navigation }: { navigation: ReactNode }) {
   useEffect(() => {
     const listener = (event: MessageEvent) => {
       if (event.source !== frame.current?.contentWindow || event.origin !== NEWSNOW_ORIGIN) return;
-      if (isNewsNowWorkbenchMessage(event.data)) { setWorkbench(event.data.state); setBridgeError(""); }
+      if (isNewsNowWorkbenchMessage(event.data)) {
+        if (!bridgeReady.current) { bridgeReady.current = true; command("connect"); }
+        setWorkbench(event.data.state); setBridgeError("");
+        if (event.data.layout) {
+          const raw = JSON.stringify(event.data.layout);
+          if (raw !== savedLayout.current) {
+            try {
+              window.localStorage.setItem(NEWSNOW_LAYOUT_KEY, raw);
+              savedLayout.current = raw;
+              setLayoutError("");
+            } catch {
+              setLayoutError("未能保存卡片偏好；当前调整仍然有效，刷新后可能恢复原布局。请检查浏览器存储权限。");
+            }
+          }
+        }
+      }
       else if (event.data?.channel === NEWSNOW_BRIDGE_CHANNEL && event.data?.version === NEWSNOW_BRIDGE_VERSION && event.data?.type === "focus-manage") manage.current?.focus();
     };
     window.addEventListener("message", listener);
@@ -56,8 +80,10 @@ export function NewsNowDiscovery({ navigation }: { navigation: ReactNode }) {
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme"] });
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     const motionChanged = () => command("connect");
+    const layoutChanged = (event: StorageEvent) => { if (event.key === NEWSNOW_LAYOUT_KEY || event.key === null) command("connect"); };
     media.addEventListener("change", motionChanged);
-    return () => { window.removeEventListener("message", listener); themeObserver.disconnect(); media.removeEventListener("change", motionChanged); };
+    window.addEventListener("storage", layoutChanged);
+    return () => { window.removeEventListener("message", listener); window.removeEventListener("storage", layoutChanged); themeObserver.disconnect(); media.removeEventListener("change", motionChanged); };
   }, [command]);
 
   useEffect(() => {
@@ -74,6 +100,7 @@ export function NewsNowDiscovery({ navigation }: { navigation: ReactNode }) {
   }, [loaded, workbench, command]);
 
   function reconnect() {
+    bridgeReady.current = false;
     setStatus(null); setLoaded(false); setSlow(false); setWorkbench(null); setBridgeError(""); setAttempt(value => value + 1);
   }
 
@@ -89,7 +116,7 @@ export function NewsNowDiscovery({ navigation }: { navigation: ReactNode }) {
       </details> : null}
     </div></div>
     {bridgeError ? <div className="newsnow-feedback" role="alert">{bridgeError}<button className="btn compact" onClick={reconnect}>重新连接</button></div> : null}
-    {workbench?.storageError ? <p className="newsnow-feedback" role="alert">{workbench.storageError}</p> : null}
+    {layoutError || workbench?.storageError ? <p className="newsnow-feedback" role="alert">{layoutError || workbench?.storageError}</p> : null}
     {status?.available ? <>
       {slow ? <p className="subtle" role="status">内嵌页面加载较慢。若内容空白，请尝试重新连接或独立打开。</p> : null}
       <div className="newsnow-viewport">

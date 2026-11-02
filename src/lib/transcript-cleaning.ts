@@ -1,5 +1,4 @@
 import { Platform } from "./types";
-import { piEnabled } from "./pi-runtime";
 
 export type TranscriptCleanResult = {
   text: string;
@@ -41,7 +40,7 @@ export async function cleanTranscriptText(input: {
 
   const { chatComplete, getChatRuntimeConfig } = await import("./ai");
   const runtime = getChatRuntimeConfig();
-  if (!piEnabled() && !runtime.configured) {
+  if (!runtime.configured) {
     return {
       text: localCleaned,
       usedModel: "local-cleaner",

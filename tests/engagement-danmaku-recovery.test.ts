@@ -84,6 +84,10 @@ test("弹幕批次取消恢复、永久失败和两路失败落盘", async (t) =
       planFinished = true;
       res.writeHead(401); res.end("unauthorized"); return;
     }
+    if (mode === "both" && system.includes("判断评论")) {
+      reply({ relevant: Array.from({ length: 60 }, (_, i) => i) });
+      return;
+    }
     if (mode === "both" && system.startsWith("为")) {
       reply(["屏幕看起来挺方便", "价格还是要再看看"]);
       return;

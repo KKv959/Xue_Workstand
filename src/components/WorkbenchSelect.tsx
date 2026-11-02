@@ -43,7 +43,7 @@ export function WorkbenchSelect({ children, value, onValueChange, disabled, clas
 
 export function WorkbenchSelectPopover(props: PopoverProps) {
   const context = useSlottedContext(PopoverContext);
-  return <Popover {...props} isNonModal className="workbench-select-popover" style={() => {
+  return <Popover {...props} className="workbench-select-popover" style={() => {
     const trigger = context?.triggerRef?.current;
     // 浮层通过 portal 挂在 body 下，需要显式沿用触发框的实际字号。
     return trigger ? { fontSize: getComputedStyle(trigger).fontSize } : {};
