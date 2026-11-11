@@ -120,7 +120,7 @@ export type StyleSampleAnalysisCache = {
   title: string;
   inputChars: number;
   analysis: string;
-  evidence?: import("./writer-context").StyleEvidence;
+  evidence?: import("./writer-context").StoredStyleEvidence;
   usedModel: string;
   reasoningEffort: string;
   requestedServiceTier?: string;
@@ -1164,7 +1164,7 @@ export async function saveAccountStyleSampleAnalysis(
 export async function saveDraft(input: DraftInput) {
   const now = nowIso();
   const id = `${now.replace(/[:.]/g, "-")}-${randomUUID()}`;
-  const title = makeDraftTitleFromContent(input.content || input.prompt || input.title, input.title);
+  const title = makeDraftTitleFromContent(input.title || input.input || input.prompt || input.content, input.title);
 
   if (input.targetType === "project") {
     const project = await resolveProject(input.projectId);

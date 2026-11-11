@@ -75,6 +75,7 @@ test("审核模板值会保留账号标识并按服务粒度生成首轮目标",
     accountName: "",
     calculation,
     platform: "douyin",
+    projectName: " 手填项目 ",
     splitDeliveryEnabled: true,
     videoTitle: " 视频标题 ",
     currentPlayCount: 12345,
@@ -82,6 +83,7 @@ test("审核模板值会保留账号标识并按服务粒度生成首轮目标",
   });
 
   assert.equal(values.accountName, "测试账号");
+  assert.equal(values.projectName, "手填项目");
   assert.equal(values.douyinId, "douyin-1");
   assert.equal(values.playLabel, "（播放）");
   assert.equal(values.playValue, "1.2万");

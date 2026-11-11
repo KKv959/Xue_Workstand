@@ -1,6 +1,7 @@
 import type { GrossMarginPriceTable } from "./types";
 
 export const grossMarginReviewTemplateVariables = [
+  { name: "projectName", label: "项目" },
   { name: "date", label: "日期" },
   { name: "accountName", label: "账号名" },
   { name: "douyinId", label: "抖音ID" },
@@ -46,6 +47,7 @@ export function getDefaultGrossMarginReviewTemplate(platform: GrossMarginPriceTa
   if (platform === "bilibili") {
     return [
       "【B站】",
+      "项目：{{projectName}}",
       "账号：{{accountName}}",
       "视频链接：{{videoUrl}}",
       "视频标题：{{videoTitle}}",
@@ -67,6 +69,7 @@ export function getDefaultGrossMarginReviewTemplate(platform: GrossMarginPriceTa
 
   return [
     "【抖音】",
+    "项目：{{projectName}}",
     "账号：{{accountName}}",
     "抖音ID：{{douyinId}}",
     "合作码：{{cooperationCode}}",
@@ -86,7 +89,9 @@ export function getDefaultGrossMarginReviewTemplate(platform: GrossMarginPriceTa
 }
 
 export function normalizeGrossMarginReviewTemplateContent(content: string) {
-  return content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+  return content.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+    .replace(/^([ \t]*项目[：:])[ \t]*$/gm, "$1{{projectName}}")
+    .trim();
 }
 
 export function findUnknownGrossMarginReviewTemplateVariables(content: string) {

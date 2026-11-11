@@ -18,6 +18,7 @@
     "remote:stop": "node scripts/remote-server.mjs stop",
     "remote:status": "node scripts/remote-server.mjs status",
     "remote:dev": "node scripts/remote-server.mjs dev",
+    "remote:build": "node scripts/remote-server.mjs build",
     "remote:deploy": "node scripts/remote-server.mjs deploy",
     "remote:rollback": "node scripts/remote-server.mjs rollback",
     "build": "next build",

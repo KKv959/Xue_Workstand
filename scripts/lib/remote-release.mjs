@@ -46,12 +46,18 @@ export async function hashEntries(root, entries, artifact = false) {
 export async function releaseInputs(root, env, npmVersion) {
   const sourceDigest = await hashEntries(root, sourceEntries);
   const configDigest = await hashEntries(root, environmentFiles);
-  const environment = Object.entries(env).filter(([key]) => !["PWD", "OLDPWD", "SHLVL", "_"].includes(key)).sort(([a], [b]) => a.localeCompare(b));
+  // npm 入口和 Codex 调用元数据不影响构建；工具调用 ID 每次都会变化。
+  const invocationKeys = ["PWD", "OLDPWD", "SHLVL", "_", "INIT_CWD", "npm_lifecycle_event", "npm_lifecycle_script", "npm_command"];
+  const environment = Object.entries(env).filter(([key]) => !invocationKeys.includes(key) && !key.startsWith("CODEX_")).sort(([a], [b]) => a.localeCompare(b));
+  const installationInputs = await hashEntries(root, ["package.json", "package-lock.json", ".npmrc"]);
+  const dependencyFingerprint = crypto.createHash("sha256").update(JSON.stringify({
+    installationInputs, environment, node: process.version, platform: process.platform, arch: process.arch, npmVersion
+  })).digest("hex");
   const fingerprint = crypto.createHash("sha256").update(JSON.stringify({
     sourceDigest, configDigest, environment, node: process.version,
     platform: process.platform, arch: process.arch, npmVersion
   })).digest("hex");
-  return { fingerprint, sourceDigest };
+  return { fingerprint, sourceDigest, dependencyFingerprint };
 }
 
 export async function hashArtifact(root) {
@@ -80,7 +86,7 @@ export async function readCandidate(stateRoot, fingerprint) {
     return null;
   }
   if (candidate?.schemaVersion !== 1 || candidate.fingerprint !== fingerprint ||
-      typeof candidate.buildId !== "string" || !/^[\w-]+$/.test(candidate.buildId) || candidate.validation !== "passed") return null;
+      typeof candidate.buildId !== "string" || !/^[\w-]+$/.test(candidate.buildId) || candidate.validation !== "build-passed") return null;
   const releaseRoot = path.join(stateRoot, "releases", candidate.buildId);
   try {
     const build = JSON.parse(await fs.promises.readFile(path.join(releaseRoot, "REMOTE_BUILD.json"), "utf8"));

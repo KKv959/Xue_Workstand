@@ -15,7 +15,7 @@
 .trendradar-generation summary { cursor: pointer; padding-block: 14px; font-size: 13px; }
 .trendradar-generation summary span { margin-left: 16px; color: var(--muted); font-size: var(--text-meta); }
 .trendradar-generation-body { display: grid; gap: 16px; padding: 8px 0 20px; max-width: 960px; }
-.trendradar-reading-toolbar { display: flex; justify-content: space-between; align-items: start; gap: 24px; border-bottom: 1px solid var(--line); }
+.trendradar-reading-toolbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; border-bottom: 1px solid var(--line); }
 .trendradar-reading-toolbar .trendradar-report-details { max-width: 360px; padding-block: 12px; text-align: right; }
 .trendradar-reading-toolbar .trendradar-report-details summary { margin-left: auto; }
 @media (max-width: 700px) { .trendradar-reading-toolbar { flex-wrap: wrap; gap: 8px; } .trendradar-generation summary span { display: block; margin: 8px 0 0 16px; } }

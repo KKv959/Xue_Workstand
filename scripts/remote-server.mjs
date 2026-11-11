@@ -23,7 +23,7 @@ const dependencyNames = ["opencli", "browserBridge", "ffmpeg", "chat", "image"];
 
 
 try {
-  if (["setup", "start", "stop", "dev", "deploy", "rollback"].includes(command)) await withServiceLock(() => ["deploy", "rollback"].includes(command) ? main() : withTaskProtection(main));
+  if (["setup", "start", "stop", "dev", "deploy", "rollback", "build"].includes(command)) await withServiceLock(() => ["build", "deploy", "rollback"].includes(command) ? main() : withTaskProtection(main));
   else await main();
 } catch (error) {
   console.error(`远程服务错误：${describeError(error)}`);
@@ -36,11 +36,12 @@ async function main() {
   if (command === "stop") return stop();
   if (command === "status") return status();
   if (command === "dev") return startDevelopment();
+  if (command === "build") return prepareRelease();
   if (command === "deploy") return deploy();
   if (command === "rollback") return rollback();
   if (command === "serve") return serve();
 
-  throw new Error("用法：node scripts/remote-server.mjs <setup|start|stop|status|dev|deploy|rollback>");
+  throw new Error("用法：node scripts/remote-server.mjs <setup|start|stop|status|dev|build|deploy|rollback>");
 }
 
 async function setup() {
@@ -111,8 +112,7 @@ async function status() {
   }, null, 2));
 }
 
-async function deploy() {
-  if (!(await exists(launchAgentPath))) throw new Error("尚未完成远程环境配置，请先执行 npm run remote:setup。");
+async function prepareRelease() {
   const npm = capture("npm", ["--version"]);
   if (!npm.ok) throw new Error("无法读取 npm 版本，请检查 Node.js 安装。");
   const config = capture("npm", ["config", "list", "--json"]);
@@ -121,7 +121,13 @@ async function deploy() {
   const inputs = await releaseInputs(root, process.env, toolchain);
   const candidate = await readCandidate(stateRoot, inputs.fingerprint);
   const build = candidate || await buildRelease(inputs, toolchain);
-  if (candidate) console.log(`复用已验证候选：${build.buildId}（源码、依赖、配置及产物校验一致）`);
+  console.log(`${candidate ? "复用" : "生成"}已通过构建与类型检查的候选：${build.buildId}`);
+  return { inputs, toolchain, build };
+}
+
+async function deploy() {
+  if (!(await exists(launchAgentPath))) throw new Error("尚未完成远程环境配置，请先执行 npm run remote:setup。");
+  const { inputs, toolchain, build } = await prepareRelease();
 
   // 资料库与运行任务会变化，不复用候选中的旧检查结果。
   await timed("资料库检查", () => run("npm", ["run", "check:library"], {
@@ -225,19 +231,16 @@ async function buildRelease(inputs, npmVersion) {
       if (await exists(source)) await fs.promises.cp(source, path.join(stagingRoot, entry), { recursive: true });
     }
     if (await hashEntries(stagingRoot, sourceEntries) !== inputs.sourceDigest) throw new Error("复制期间源码发生变化，请重新发布。");
-    const testLibrary = path.join(workRoot, "test-library");
-    await fs.promises.mkdir(testLibrary);
+    const buildLibrary = path.join(workRoot, "build-library");
+    await fs.promises.mkdir(buildLibrary);
     const env = { ...process.env, WORKSPACE_DEV_SANDBOX: "0", NEXT_TELEMETRY_DISABLED: "1",
-      STYLE_LIBRARY_DIR: testLibrary, APP_MODE: "workspace", APP_START_PATH: "/douyin-hotlist",
+      STYLE_LIBRARY_DIR: buildLibrary, APP_MODE: "workspace", APP_START_PATH: "/douyin-hotlist",
       APP_BUILD_ID: buildId, APP_STARTED_AT: builtAt };
     console.log(`准备构建：${buildId}`);
     if (await exists(path.join(root, ".npmrc"))) await fs.promises.copyFile(path.join(root, ".npmrc"), path.join(stagingRoot, ".npmrc"));
-    await timed("安装依赖", () => run("npm", ["ci", "--include=dev", "--prefer-offline", "--no-audit", "--no-fund"], { cwd: stagingRoot, env }));
-    await fs.promises.rm(path.join(stagingRoot, ".npmrc"), { force: true });
-    await timed("测试", () => run("npm", ["test"], { cwd: stagingRoot, env: { ...env, NODE_ENV: "test" } }));
-    await timed("Lint", () => run("npm", ["run", "lint"], { cwd: stagingRoot, env }));
-    // Next build 校验完整类型及生成路由类型；lint 已覆盖 scripts/tests，不重复执行。
-    await timed("构建及类型检查", () => run("npm", ["run", "build", "--", "--no-lint"], { cwd: stagingRoot, env: { ...env, NODE_ENV: "production" } }));
+    // 测试和 lint 在修改完成时按影响范围执行；生产构建承担完整类型检查。
+    await withBuildDependencies(stagingRoot, inputs.dependencyFingerprint, env, () =>
+      timed("构建及类型检查", () => run("npm", ["run", "build", "--", "--no-lint"], { cwd: stagingRoot, env: { ...env, NODE_ENV: "production" } })));
     if ((await releaseInputs(root, process.env, npmVersion)).fingerprint !== inputs.fingerprint) throw new Error("验证期间源码或配置发生变化，未生成可复用候选。");
     const standaloneRoot = path.join(stagingRoot, ".next", "standalone");
     if (!(await exists(path.join(standaloneRoot, "server.js")))) throw new Error("构建完成但没有生成 .next/standalone/server.js。");
@@ -251,11 +254,49 @@ async function buildRelease(inputs, npmVersion) {
       buildId, version: readPackageVersion(), gitCommit, dirty, builtAt, fingerprint: inputs.fingerprint
     });
     const candidate = { schemaVersion: 1, buildId, fingerprint: inputs.fingerprint,
-      validation: "passed", validatedAt: new Date().toISOString(), artifactDigest: await hashArtifact(releaseRoot) };
+      validation: "build-passed", validatedAt: new Date().toISOString(), artifactDigest: await hashArtifact(releaseRoot) };
     await writeJsonAtomic(path.join(stateRoot, "candidate.json"), candidate);
     return { ...candidate, releaseRoot };
   } finally {
     await fs.promises.rm(workRoot, { recursive: true, force: true });
+  }
+}
+
+async function withBuildDependencies(stagingRoot, fingerprint, env, build) {
+  const cacheRoot = path.join(stateRoot, "build-dependencies");
+  const cachedModules = path.join(cacheRoot, "node_modules");
+  const modules = path.join(stagingRoot, "node_modules");
+  const marker = path.join(cacheRoot, "fingerprint");
+  const previous = await fs.promises.readFile(marker, "utf8").catch(error => {
+    if (error.code !== "ENOENT") throw error;
+    return "";
+  });
+  let ready = false;
+  try {
+    await timed("准备构建依赖", async () => {
+      if (previous === fingerprint && await exists(cachedModules)) {
+        // 发布锁保证串行；移动目录避免复制依赖，也不与开发服务共享 node_modules。
+        await fs.promises.rename(cachedModules, modules);
+        console.log("复用构建依赖，无需 npm ci。");
+      } else {
+        await run("npm", ["ci", "--include=dev", "--prefer-offline", "--no-audit", "--no-fund"], { cwd: stagingRoot, env });
+      }
+    });
+    ready = true;
+    await fs.promises.rm(path.join(stagingRoot, ".npmrc"), { force: true });
+    return await build();
+  } finally {
+    if (ready) {
+      try {
+        await fs.promises.mkdir(cacheRoot, { recursive: true });
+        await fs.promises.rm(marker, { force: true });
+        await fs.promises.rm(cachedModules, { recursive: true, force: true });
+        await fs.promises.rename(modules, cachedModules);
+        await fs.promises.writeFile(marker, fingerprint, "utf8");
+      } catch (error) {
+        console.warn(`构建依赖缓存保存失败，下次将重新安装：${describeError(error)}`);
+      }
+    }
   }
 }
 

@@ -3,13 +3,15 @@ import type { AiPolicyId } from "./ai-policy-catalog";
 import { randomUUID } from "crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { preserveWriterPreferences, writerStyleParts } from "./writer-preference";
-import { WRITER_REVISION_PROMPT_VERSION, revisionWriteInstruction, STYLE_CARD_PROMPT_VERSION, writerWebResearchInstruction, styleCardInstruction, initialWriteInstruction } from "./writer-prompts";
+import { WRITER_REVISION_PROMPT_VERSION, revisionWriteInstruction, STYLE_ANALYSIS_VERSION, STYLE_CARD_PROMPT_VERSION, writerWebResearchInstruction, styleAnalysisInstruction, styleCardInstruction, initialWriteInstruction } from "./writer-prompts";
 import { logPipelineEvent } from "./observability";
 import { cachedWriterResearch, WriterResearchCacheError } from "./storage/writer-research";
 import { writerResearchForWriting, WRITER_SEARCH_TIMEOUT_MS, WRITER_SEARCH_MAX_OUTPUT_TOKENS } from "./writer-research";
 import { collectStyleOriginals, STYLE_REFERENCE_VERSION } from "./style-reference";
 import {
   WRITER_PROMPT_VERSION,
+  parseStyleEvidence,
+  styleEvidencePassages,
   validateStyleCardCitations,
   type StyleCardEvidence, type WriterContextSnapshot
 } from "./writer-context";
@@ -39,13 +41,16 @@ import {
 import {
   getTopTranscriptSamples,
   isPlaceholderStyle,
+  readAccountStyleSampleAnalysis,
   readAccountStyleMeta,
   readStyle,
   resolveAccount,
   resolveDraft,
   saveDraft,
+  saveAccountStyleSampleAnalysis,
   saveAccountStyleMeta,
-  saveStyle
+  saveStyle,
+  type StyleSampleAnalysisCache
 } from "./storage";
 import {
   extractRewriteSourceMaterial,
@@ -205,6 +210,8 @@ export type AccountStyleGenerationResult = {
 };
 
 const STYLE_REASONING_EFFORT: ChatReasoningEffort = "medium";
+const STYLE_SAMPLE_ANALYSIS_CONCURRENCY = boundedEnvInteger("STYLE_SAMPLE_ANALYSIS_CONCURRENCY", 2, 1, 6);
+const STYLE_SAMPLE_ANALYSIS_PROMPT_VERSION = STYLE_ANALYSIS_VERSION;
 export const WRITE_COPY_REASONING_EFFORT: ChatReasoningEffort = "medium";
 const WRITE_PROMPT_VERSION = WRITER_PROMPT_VERSION;
 const WEB_RESEARCH_TIMEOUT_MS = 180_000;
@@ -319,7 +326,8 @@ async function chatCompleteStrictLegacy(
   } = {}
 ): Promise<ChatCompletionResult> {
   throwIfAborted(options.signal);
-  const configs = await applyAiPolicy(configuredChatConfigs().map((config) => options.model ? { ...config, model: options.model } : config), options.policy);
+  const configured = configuredChatConfigs().map((config) => options.model ? { ...config, model: options.model } : config);
+  const configs = await applyAiPolicy(isStyleRelayPolicy(options.policy) ? configured.slice(0, 1) : configured, options.policy);
   if (options.policy) reasoningEffort = undefined;
   if (!configs.length) {
     throw new Error("未配置对话模型，请先配置 CHAT_API_KEY / OPENAI_API_KEY、CHAT_BASE_URL 和 CHAT_MODEL 后再生成。");
@@ -327,7 +335,8 @@ async function chatCompleteStrictLegacy(
 
   let lastError: unknown;
   for (const config of configs) {
-    for (let attempt = 0; attempt < (options.retryTransientFailure ? 2 : 1); attempt += 1) {
+    const attempts = options.retryTransientFailure || isStyleRelayPolicy(options.policy) ? 2 : 1;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
       throwIfAborted(options.signal);
       try {
         if (options.stream) return await streamResponseTextForConfig(config, {
@@ -341,10 +350,11 @@ async function chatCompleteStrictLegacy(
         if (isAbortError(error)) throw error;
         lastError = error;
         const failure = classifyModelFailure(error);
-        const retry = Boolean(options.retryTransientFailure && attempt === 0 &&
-          ["network", "timeout", "rate_limit", "server"].includes(failure.kind));
         // Log only classified diagnostics, never upstream bodies, URLs, prompts or credentials.
         const diagnostic = modelFailureDiagnostic(error);
+        const retry = attempt === 0 && (options.retryTransientFailure &&
+          ["network", "timeout", "rate_limit", "server"].includes(failure.kind) ||
+          isRetryableStyleRelayFailure(options.policy, failure.kind, diagnostic));
         logPipelineEvent("model.strict-failure", {
           model: config.model, wireApi: config.wireApi, kind: failure.kind,
           diagnostic, attempt: attempt + 1, retry
@@ -379,20 +389,29 @@ function formatStrictChatError(error: unknown) {
         rawMessage: "unknown model error"
       };
   const diagnostic = modelFailureDiagnostic(error);
-  return `${failure.userMessage}${diagnostic ? `（${diagnostic}）` : ""}，此功能不会切到本地模板。${strictChatFailureAction(failure.kind)}`;
+  return `${failure.userMessage}${diagnostic ? `（${diagnostic}）` : ""}。${strictChatFailureAction(failure.kind)}`;
 }
 
 function strictChatFailureAction(kind: ModelErrorKind) {
-  if (kind === "not_configured") return "请配置 CHAT_API_KEY / OPENAI_API_KEY、CHAT_BASE_URL 和 CHAT_MODEL。";
-  if (kind === "auth") return "请检查主模型或 CHAT_FALLBACK_* 备用模型的 API Key。";
-  if (kind === "quota") return "请检查模型额度是否不足，必要时补余额或切换到可用的备用对话模型。";
+  if (kind === "not_configured") return "请配置中转站的 CHAT_API_KEY、CHAT_BASE_URL 和 CHAT_MODEL。";
+  if (kind === "auth") return "请检查中转站 API Key、所选模型权限或节点状态。";
+  if (kind === "quota") return "请检查中转站模型额度是否不足。";
   if (kind === "endpoint") return "请检查 CHAT_BASE_URL、CHAT_WIRE_API、CHAT_RESPONSES_URL 或 CHAT_COMPLETIONS_URL。";
   if (kind === "network") return "请检查网络、中转站地址和 CHAT_PROXY_URL。";
   if (kind === "rate_limit") return "请稍后重试，或降低当前功能的模型并发数。";
-  if (kind === "timeout") return "请检查模型节点响应速度，稍后重试或切换可用节点。";
-  if (kind === "server") return "请稍后重试，或切换到可用的备用对话模型。";
-  if (kind === "parse" || kind === "empty") return "请重试或切换到更稳定的对话模型。";
-  return "请检查对话模型配置后再重试。";
+  if (kind === "timeout") return "请检查中转站响应速度后重试。";
+  if (kind === "server") return "请稍后重试当前中转站模型。";
+  if (kind === "parse" || kind === "empty") return "请重试当前中转站模型。";
+  return "请检查中转站模型配置后再重试。";
+}
+
+function isStyleRelayPolicy(policy?: AiPolicyId) {
+  return policy === "account_sample" || policy === "account_style";
+}
+
+function isRetryableStyleRelayFailure(policy: AiPolicyId | undefined, kind: ModelErrorKind, diagnostic?: string) {
+  return isStyleRelayPolicy(policy) &&
+    (["network", "timeout", "rate_limit", "server"].includes(kind) || kind === "auth" && diagnostic === "HTTP 403");
 }
 
 async function completeVision(prompt: string, images: string[], options: ChatRequestOptions, validate: (text: string) => unknown, material = false) {
@@ -476,7 +495,8 @@ async function streamResponseTextLegacy(input: {
   onRetry?: (message: string) => void | Promise<void>;
 }) {
   throwIfAborted(input.signal);
-  const configs = await applyAiPolicy(configuredChatConfigs(), input.policy);
+  const configured = configuredChatConfigs();
+  const configs = await applyAiPolicy(isStyleRelayPolicy(input.policy) ? configured.slice(0, 1) : configured, input.policy);
   if (input.policy) input = { ...input, reasoningEffort: undefined };
   if (!configs.length) {
     return fallbackChatCompletion(firstRunnableChatModel());
@@ -484,7 +504,7 @@ async function streamResponseTextLegacy(input: {
 
   let lastError: unknown;
   for (const config of configs) {
-    const attempts = input.policy === "writer_generate" || input.policy === "writer_revise" ? 2 : 1;
+    const attempts = input.policy === "writer_generate" || input.policy === "writer_revise" || isStyleRelayPolicy(input.policy) ? 2 : 1;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       throwIfAborted(input.signal);
       try {
@@ -499,11 +519,13 @@ async function streamResponseTextLegacy(input: {
         lastError = error;
         const failure = classifyModelFailure(error);
         // Partial output must not be concatenated with a new request or saved as a complete draft.
+        const diagnostic = modelFailureDiagnostic(error);
         const retry = !(error instanceof StreamResponseTextError) && attempt + 1 < attempts &&
-          ["network", "timeout", "rate_limit", "server"].includes(failure.kind);
+          (["network", "timeout", "rate_limit", "server"].includes(failure.kind) ||
+            isRetryableStyleRelayFailure(input.policy, failure.kind, diagnostic));
         logPipelineEvent("model.stream-failure", {
           model: config.model, wireApi: config.wireApi, kind: failure.kind,
-          diagnostic: modelFailureDiagnostic(error), attempt: attempt + 1, retry
+          diagnostic, attempt: attempt + 1, retry
         });
         if (error instanceof StreamResponseTextError) throw error;
         if (!retry) break;
@@ -1312,25 +1334,31 @@ async function chatCompleteWithFallback(
   }
 }
 
-export function streamStyleResponseTextWithFallback(input: {
+export async function streamStyleResponseText(input: {
   policy?: AiPolicyId;
   messages: ChatMessage[];
   maxOutputTokens?: number;
   signal?: AbortSignal;
   onDelta: (delta: string) => void;
 }) {
-  return streamResponseTextWithFallback({
-    policy: input.policy || "account_style",
-    messages: input.messages,
-    reasoningEffort: STYLE_REASONING_EFFORT,
-    maxOutputTokens: input.maxOutputTokens,
-    signal: input.signal,
-    onDelta: input.onDelta
-  });
+  try {
+    return await streamResponseText({
+      policy: input.policy || "account_style",
+      messages: input.messages,
+      reasoningEffort: STYLE_REASONING_EFFORT,
+      maxOutputTokens: input.maxOutputTokens,
+      signal: input.signal,
+      onDelta: input.onDelta
+    });
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    if (error instanceof StreamResponseTextError) throw error;
+    throw new Error(formatStrictChatError(error), { cause: error });
+  }
 }
 
 function completeStyleGeneration(messages: ChatMessage[], options: { signal?: AbortSignal; policy?: AiPolicyId } = {}) {
-  return streamStyleResponseTextWithFallback({
+  return streamStyleResponseText({
     policy: options.policy,
     messages,
     signal: options.signal,
@@ -1863,6 +1891,30 @@ type StyleCompletionTimings = {
   totalMs?: number;
 };
 
+type StyleAnalysisEntry = {
+  citationId: string;
+  workHash: string;
+  passages: string[];
+  kind: StyleSampleAnalysisCache["kind"];
+  sourceId: string;
+  title: string;
+  inputChars: number;
+  analysis: string;
+  cacheKey: string;
+};
+
+type StyleAnalysisTask = {
+  kind: StyleSampleAnalysisCache["kind"];
+  sourceId: string;
+  title: string;
+  inputChars: number;
+  cacheKey: string;
+  transcript: string;
+  readCache: () => Promise<StyleSampleAnalysisCache | null>;
+  saveCache: (cache: StyleSampleAnalysisCache) => Promise<StyleSampleAnalysisCache>;
+  messages: () => ChatMessage[];
+};
+
 type StylePreparationOptions = {
   force?: boolean;
   signal?: AbortSignal;
@@ -1878,15 +1930,162 @@ const emptyStyleAnalysisStats = (): StyleAnalysisStats => ({
   analysisCount: 0,
   analysisGeneratedCount: 0,
   analysisCachedCount: 0,
-  analysisConcurrency: 0,
+  analysisConcurrency: STYLE_SAMPLE_ANALYSIS_CONCURRENCY,
   inputChars: 0
 });
 
+function styleAnalysisSignature() {
+  return { version: STYLE_SAMPLE_ANALYSIS_PROMPT_VERSION, models: configuredChatConfigs().map(c => ({
+    model: c.model, wireApi: c.wireApi, endpointHash: shortHash([c.baseUrl, c.responsesUrl, c.chatCompletionsUrl].join("|"))
+  })), reasoning: STYLE_REASONING_EFFORT };
+}
+
 function styleCardSignature() {
-  return { cardVersion: STYLE_CARD_PROMPT_VERSION, selectionVersion: STYLE_REFERENCE_VERSION,
-    models: configuredChatConfigs().map(c => ({ model: c.model, wireApi: c.wireApi,
-      endpointHash: shortHash([c.baseUrl, c.responsesUrl, c.chatCompletionsUrl].join("|")) })),
-    reasoning: STYLE_REASONING_EFFORT };
+  return { ...styleAnalysisSignature(), cardVersion: STYLE_CARD_PROMPT_VERSION, selectionVersion: STYLE_REFERENCE_VERSION };
+}
+
+function accountStyleAnalysisCacheKey(sample: AccountStyleSample) {
+  return shortHash(JSON.stringify({
+    version: 1,
+    promptVersion: STYLE_SAMPLE_ANALYSIS_PROMPT_VERSION,
+    learning: styleAnalysisSignature(),
+    kind: "account-video",
+    videoId: sample.video.id,
+    title: sample.video.title,
+    transcript: sample.transcript
+  }));
+}
+
+function buildAccountStyleAnalysisTasks(
+  platform: Platform,
+  accountId: string,
+  samples: AccountStyleSample[]
+): StyleAnalysisTask[] {
+  return samples.map((sample) => ({
+    kind: "account-video" as const,
+    sourceId: sample.video.id,
+    title: sample.video.title,
+    inputChars: sample.transcript.length,
+    cacheKey: accountStyleAnalysisCacheKey(sample),
+    transcript: sample.transcript,
+    readCache: () => readAccountStyleSampleAnalysis(platform, accountId, sample.video.id),
+    saveCache: (cache) => saveAccountStyleSampleAnalysis(platform, accountId, sample.video.id, cache),
+    messages: () => buildAccountSampleAnalysisMessages(platform, sample)
+  }));
+}
+
+function buildAccountSampleAnalysisMessages(platform: Platform, sample: AccountStyleSample): ChatMessage[] {
+  return [
+    { role: "system", content: styleAnalysisInstruction() },
+    { role: "user", content: [
+      `样本来源 ID：${sample.video.id}`,
+      `平台：${platform}`,
+      `标题：${sample.video.title}`,
+      `完整转写：\n<source_text>\n${sample.transcript}\n</source_text>`
+    ].join("\n") }
+  ];
+}
+
+async function resolveStyleSampleAnalyses(tasks: StyleAnalysisTask[], options: StylePreparationOptions = {}) {
+  const totalInputChars = tasks.reduce((total, task) => total + task.inputChars, 0);
+  let completedCount = 0;
+  let analysisGeneratedCount = 0;
+  let analysisCachedCount = 0;
+  const emitProgress = (task: StyleAnalysisTask, source: "generated" | "cached") => {
+    completedCount += 1;
+    options.onAnalysisProgress?.({
+      analysisCount: tasks.length,
+      analysisGeneratedCount,
+      analysisCachedCount,
+      analysisConcurrency: STYLE_SAMPLE_ANALYSIS_CONCURRENCY,
+      inputChars: totalInputChars,
+      completedCount,
+      currentTitle: task.title,
+      message: `${source === "generated" ? "已完成逐篇分析" : "已复用逐篇分析"} ${completedCount}/${tasks.length}`
+    });
+  };
+  const entries = await mapWithConcurrency(tasks, STYLE_SAMPLE_ANALYSIS_CONCURRENCY, async (task) => {
+    throwIfAborted(options.signal);
+    const cached = options.force ? null : await task.readCache();
+    if (isUsableStyleSampleAnalysisCache(cached, task.cacheKey)) {
+      parseStyleEvidence(cached.analysis, task.transcript, task.title);
+      analysisCachedCount += 1;
+      emitProgress(task, "cached");
+      return styleAnalysisEntryFromCache(task, cached);
+    }
+    const result = await chatCompleteStrict(task.messages(), STYLE_REASONING_EFFORT, {
+      policy: "account_sample",
+      signal: options.signal,
+      stream: true
+    });
+    const analysis = result.text.trim();
+    if (!result.ok || !analysis) throw new Error(`样本「${task.title}」风格分析失败：${result.fallbackReason || result.userMessage || "模型没有返回分析"}`);
+    const evidence = parseStyleEvidence(analysis, task.transcript, task.title);
+    const cache: StyleSampleAnalysisCache = {
+      version: 1, cacheKey: task.cacheKey, kind: task.kind, sourceId: task.sourceId, title: task.title,
+      inputChars: task.inputChars, analysis, evidence, usedModel: result.model,
+      reasoningEffort: result.reasoningEffort || STYLE_REASONING_EFFORT,
+      requestedServiceTier: result.requestedServiceTier, actualServiceTier: result.actualServiceTier,
+      wireApi: result.wireApi, generatedAt: nowIso()
+    };
+    await task.saveCache(cache);
+    analysisGeneratedCount += 1;
+    emitProgress(task, "generated");
+    return styleAnalysisEntryFromCache(task, cache);
+  });
+  return { entries, stats: {
+    analysisCount: tasks.length,
+    analysisGeneratedCount,
+    analysisCachedCount,
+    analysisConcurrency: STYLE_SAMPLE_ANALYSIS_CONCURRENCY,
+    inputChars: totalInputChars
+  } satisfies StyleAnalysisStats };
+}
+
+function isUsableStyleSampleAnalysisCache(cache: StyleSampleAnalysisCache | null, cacheKey: string): cache is StyleSampleAnalysisCache {
+  return Boolean(cache?.version === 1 && cache.cacheKey === cacheKey && cache.evidence && "summary" in cache.evidence && cache.analysis.trim());
+}
+
+function styleAnalysisEntryFromCache(task: StyleAnalysisTask, cache: StyleSampleAnalysisCache): StyleAnalysisEntry {
+  const evidence = parseStyleEvidence(cache.analysis, task.transcript, task.title);
+  return {
+    citationId: task.sourceId,
+    workHash: shortHash(task.transcript.replace(/\s+/gu, "")),
+    passages: styleEvidencePassages(evidence, task.transcript),
+    kind: task.kind,
+    sourceId: task.sourceId,
+    title: task.title,
+    inputChars: cache.inputChars,
+    analysis: evidence.summary,
+    cacheKey: cache.cacheKey
+  };
+}
+
+function mapWithConcurrency<T, R>(items: T[], concurrency: number, run: (item: T, index: number) => Promise<R>) {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+  let failed = false;
+  const workerCount = Math.min(Math.max(concurrency, 1), items.length);
+  return Promise.allSettled(Array.from({ length: workerCount }, async () => {
+    while (!failed && nextIndex < items.length) {
+      const index = nextIndex++;
+      try { results[index] = await run(items[index], index); } catch (error) { failed = true; throw error; }
+    }
+  })).then(outcomes => {
+    const failure = outcomes.find(outcome => outcome.status === "rejected");
+    if (failure?.status === "rejected") throw failure.reason;
+    return results;
+  });
+}
+
+function formatStyleAnalysisCorpus(entries: StyleAnalysisEntry[]) {
+  return entries.map((entry, index) =>
+    `样本分析 ${index + 1}｜${entry.title}\n来源:${entry.citationId}\n${entry.analysis}\n可引用原句：\n${JSON.stringify(entry.passages)}`
+  ).join("\n\n---\n\n");
+}
+
+function styleEvidenceQuotes(entries: StyleAnalysisEntry[]) {
+  return entries.flatMap(entry => entry.passages.map(quote => ({ sourceId: entry.citationId, quote, workHash: entry.workHash })));
 }
 
 function styleGenerationMetrics(
@@ -1963,20 +2162,27 @@ export async function prepareAccountStyleContext(
     };
   }
 
-  const inputChars = selected.reduce((sum, sample) => sum + sample.text.length, 0);
-  const stats = { ...emptyStyleAnalysisStats(), inputChars };
-  options.onAnalysisProgress?.({ ...stats, completedCount: 0,
-    message: `正在完整学习 ${selected.length} 篇原稿的思路与表达` });
+  const analysisTasks = buildAccountStyleAnalysisTasks(platform, accountId, samples);
+  options.onAnalysisProgress?.({
+    analysisCount: analysisTasks.length,
+    analysisGeneratedCount: 0,
+    analysisCachedCount: 0,
+    analysisConcurrency: STYLE_SAMPLE_ANALYSIS_CONCURRENCY,
+    inputChars: analysisTasks.reduce((total, task) => total + task.inputChars, 0),
+    completedCount: 0,
+    message: `正在逐篇学习 ${analysisTasks.length} 篇原稿的讲法`
+  });
+  const analysis = await resolveStyleSampleAnalyses(analysisTasks, options);
+  const corpus = formatStyleAnalysisCorpus(analysis.entries);
   const messages: ChatMessage[] = [
     { role: "system", content: styleCardInstruction() },
-    { role: "user", content: JSON.stringify({ account: account.name,
-      originals: selected.map(sample => ({ title: sample.title, text: sample.text })) }) }
+    { role: "user", content: `账号：${account.name}\n平台：${platform}\n\n<analyses>\n${corpus}\n</analyses>` }
   ];
   return {
     platform, accountId, accountName: account.name, messages, fallback: currentStyle,
-    ...sampleState, generationMode: "full", analysisStats: stats,
+    ...sampleState, generationMode: "full", analysisStats: analysis.stats,
     previousStyleHash: shortHash(currentStyle),
-    evidenceQuotes: selected.map(sample => ({ sourceId: sample.id, quote: sample.text }))
+    evidenceQuotes: styleEvidenceQuotes(analysis.entries)
   };
 }
 
@@ -2286,7 +2492,6 @@ export async function prepareWriteCopyBatchContext(
             research: variantResearch,
             sourceDigest,
             contextFingerprint,
-            includeStyleInTitle: styleContexts.length > 1,
             batchId: styleInputs.length > 1 ? traceId : undefined
           })
         }
@@ -2496,14 +2701,11 @@ function buildPreparedWriteDraftBase(input: {
   research?: string;
   sourceDigest: WriteSourceDigest;
   contextFingerprint: string;
-  includeStyleInTitle?: boolean;
   batchId?: string;
 }): PreparedWriteContext["draftBase"] {
   const reference = input.styleContexts[0].reference;
   const shared = {
-    title: input.includeStyleInTitle
-      ? `${makeTitleFromPrompt(input.input.prompt)} · ${input.styleContexts[0].title}`
-      : makeTitleFromPrompt(input.input.prompt),
+    title: makeTitleFromPrompt(input.input.sourceText || input.input.prompt),
     mode: input.input.mode,
     prompt: input.input.prompt,
     originalSourceInput: input.input.originalSourceInput?.trim()

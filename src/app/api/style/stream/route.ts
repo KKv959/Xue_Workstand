@@ -3,7 +3,7 @@ import {
   completeCachedAccountStyle,
   completePreparedAccountStyle,
   prepareAccountStyleContext,
-  streamStyleResponseTextWithFallback
+  streamStyleResponseText
 } from "@/lib/ai";
 import { apiError, parseJsonBody } from "@/lib/api-route";
 import { createNdjsonStream } from "@/lib/streaming";
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
         message: context.generationMode === "incremental" ? "正在增量更新账号风格卡" : "正在生成账号风格卡",
         progress: 35
       });
-      const result = await streamStyleResponseTextWithFallback({
+      const result = await streamStyleResponseText({
         messages: context.messages,
         signal,
         onDelta(delta) {

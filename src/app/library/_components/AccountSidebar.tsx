@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { CheckCircle2, CircleDashed, ListChecks, Music2, Search, Trash2, TvMinimal, X } from "lucide-react";
+import { CheckCircle2, CircleDashed, ListChecks, Music2, Plus, Search, Trash2, TvMinimal, X } from "lucide-react";
 import { formatPlatform } from "@/components/Formatters";
 import type { AccountListItem } from "@/lib/types";
 
@@ -10,6 +10,7 @@ type AccountSidebarProps = {
   accountManageMode: boolean;
   accounts: AccountListItem[];
   busy: string;
+  collectPanelOpen: boolean;
   loading: boolean;
   selectedAccountId: string;
   selectedAccountIds: string[];
@@ -17,6 +18,7 @@ type AccountSidebarProps = {
   onClearFilters: () => void;
   onRequestDeleteAccounts: () => void;
   onSelectAccount: (accountId: string) => void;
+  onToggleCollectPanel: () => void;
   onToggleAccountManage: () => void;
   onToggleAllAccounts: () => void;
   onToggleManagedAccount: (accountId: string) => void;
@@ -27,6 +29,7 @@ export const AccountSidebar = memo(function AccountSidebar({
   accountManageMode,
   accounts,
   busy,
+  collectPanelOpen,
   loading,
   selectedAccountId,
   selectedAccountIds,
@@ -34,6 +37,7 @@ export const AccountSidebar = memo(function AccountSidebar({
   onClearFilters,
   onRequestDeleteAccounts,
   onSelectAccount,
+  onToggleCollectPanel,
   onToggleAccountManage,
   onToggleAllAccounts,
   onToggleManagedAccount
@@ -47,14 +51,15 @@ export const AccountSidebar = memo(function AccountSidebar({
         </div>
         <div className="account-manage-actions">
           <button
-            className="btn compact account-manage-toggle"
-            aria-label={accountManageMode ? "退出账号选择" : "批量选择账号"}
-            onClick={onToggleAccountManage}
-            title={accountManageMode ? "退出选择" : "批量选择"}
+            aria-controls="library-collect-dialog"
+            aria-expanded={collectPanelOpen}
+            aria-haspopup="dialog"
+            className={`btn compact account-collect-trigger ${collectPanelOpen ? "" : "primary"}`}
+            onClick={onToggleCollectPanel}
             type="button"
           >
-            {accountManageMode ? <X aria-hidden="true" size={15} /> : <ListChecks aria-hidden="true" size={15} />}
-            {accountManageMode ? "取消" : "多选"}
+            <Plus aria-hidden="true" size={15} />
+            采集
           </button>
         </div>
       </div>
@@ -78,17 +83,29 @@ export const AccountSidebar = memo(function AccountSidebar({
         </div>
       ) : null}
       <div className="pane-search account-filter-stack">
-        <div className="search-control filter-search">
-          <Search aria-hidden="true" size={15} />
-          <input
-            aria-label="搜索账号"
-            autoComplete="off"
-            name="accountFilter"
-            value={accountFilter}
-            onChange={(event) => onAccountFilterChange(event.target.value)}
-            placeholder="搜索账号…"
-            type="search"
-          />
+        <div className="account-search-row">
+          <div className="search-control filter-search">
+            <Search aria-hidden="true" size={15} />
+            <input
+              aria-label="搜索账号"
+              autoComplete="off"
+              name="accountFilter"
+              value={accountFilter}
+              onChange={(event) => onAccountFilterChange(event.target.value)}
+              placeholder="搜索账号…"
+              type="search"
+            />
+          </div>
+          <button
+            className="btn compact account-manage-toggle"
+            aria-label={accountManageMode ? "退出账号选择" : "批量选择账号"}
+            onClick={onToggleAccountManage}
+            title={accountManageMode ? "退出选择" : "批量选择"}
+            type="button"
+          >
+            {accountManageMode ? <X aria-hidden="true" size={15} /> : <ListChecks aria-hidden="true" size={15} />}
+            {accountManageMode ? "取消" : "多选"}
+          </button>
         </div>
       </div>
       <div className="pane-body">

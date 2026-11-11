@@ -1,9 +1,10 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { normalizeGrossMarginAccountName } from "@/lib/gross-margin-account-names";
 import { WorkbenchSelect, WorkbenchSelectPopover } from "@/components/WorkbenchSelect";
 
-import { Check, ChevronDown, RefreshCw } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { Button, ComboBox, Input, ListBox, ListBoxItem } from "react-aria-components";
 import {
   getActiveServiceOptions,
@@ -13,7 +14,6 @@ import {
 import type { GrossMarginAccountPrice } from "@/lib/types";
 import type { GrossMarginWorkbenchController } from "../_hooks/useGrossMarginWorkbench";
 import {
-  describeQuantityInput,
   formatMoney,
   formatPlatform,
   formatTypeOptionName,
@@ -50,10 +50,9 @@ type GrossMarginMaintenancePaneProps = Pick<
   | "selectedProject"
   | "projectSelectionValue"
   | "projectMonth"
-  | "projectSourceError"
-  | "projectSourceLoading"
-  | "refreshProjects"
   | "handleProjectChange"
+  | "projectName"
+  | "handleManualProjectNameChange"
 >;
 
 type GrossMarginAccountComboboxProps = {
@@ -111,11 +110,18 @@ export function GrossMarginMaintenancePane({
   selectedProject,
   projectSelectionValue,
   projectMonth,
-  projectSourceError,
-  projectSourceLoading,
-  refreshProjects,
-  handleProjectChange
+  handleProjectChange,
+  projectName,
+  handleManualProjectNameChange
 }: GrossMarginMaintenancePaneProps) {
+  const [editingProject, setEditingProject] = useState(false);
+  const projectInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!editingProject) return;
+    // 等下拉浮层关闭后再聚焦，避免浮层的焦点约束拦截输入框。
+    const frame = requestAnimationFrame(() => projectInputRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [editingProject]);
   const selectedAccountPrice = matchedAccount
     ? getGrossMarginAccountPrice(matchedAccount, accountPriceKind)
     : null;
@@ -150,15 +156,23 @@ export function GrossMarginMaintenancePane({
             <div className="field gross-project-field" title={selectedProject ? `${selectedProject.projectName}${selectedProject.date ? ` · ${selectedProject.date}` : ""}` : undefined}>
               <label htmlFor="gross-project">项目</label>
               <div className="gross-project-controls">
-                <WorkbenchSelect aria-label="项目" aria-describedby="gross-project-hint" id="gross-project" value={projectSelectionValue} onValueChange={handleProjectChange}>
-                  <option value="choose" disabled>{projectSourceLoading ? "正在同步当月项目…" : !accountName.trim() ? "请先选择账号" : projectOrders.length ? "请选择当月项目" : projectSourceError ? "同步失败，可手动填写" : "暂无匹配的当月项目"}</option>
-                  {projectOrders.map(order => <option value={order.id} key={order.id}>{order.projectName}{order.date ? ` · ${order.date}` : ""}{order.orderAmount !== null ? ` · ${formatMoney(order.orderAmount)}` : ""}</option>)}
-                  <option value="manual">手动填写</option>
-                </WorkbenchSelect>
-                <button className="btn compact icon-only" type="button" aria-label={projectSourceLoading ? "同步项目中" : projectSourceError ? "重试同步项目" : "同步项目"} title={projectSourceLoading ? "同步项目中" : projectSourceError ? "重试同步项目" : "同步项目"} disabled={projectSourceLoading} onClick={() => void refreshProjects()}><RefreshCw size={16} aria-hidden="true" /></button>
+                <input
+                  aria-label="项目名称" aria-describedby="gross-project-hint" autoComplete="off" ref={projectInputRef}
+                  id="gross-project" name="projectName" defaultValue={projectName} placeholder="输入项目名称，回车或点击其它位置保存"
+                  onBlur={event => {
+                    handleManualProjectNameChange(event.target.value);
+                    setEditingProject(false);
+                  }}
+                  onKeyDown={event => {
+                    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  }}
+                />
               </div>
-              <span id="gross-project-hint" className={`field-hint${projectSourceError || selectedProject?.warning ? " warning" : ""}`} role="status" title={projectSourceError || selectedProject?.warning}>
-                {projectSourceLoading ? "正在同步项目报价，已有缓存仍可使用" : projectSourceError || selectedProject?.warning || (selectedProject ? `返点金额：${formatMoney(selectedProject.rebateAmount || 0)}` : `${projectMonth || "当月"} · ${projectOrders.length} 个项目 · 右侧按钮手动同步`)}
+              <span id="gross-project-hint" className={`field-hint${selectedProject?.warning ? " warning" : ""}`} role="status" title={selectedProject?.warning}>
+                {selectedProject?.warning || (selectedProject ? `返点金额：${formatMoney(selectedProject.rebateAmount || 0)}` : "项目名称和报价请手动填写")}
               </span>
             </div>
             <div className="field">
@@ -274,7 +288,7 @@ export function GrossMarginMaintenancePane({
                   <tr key={config.service}>
                     <td>
                       <strong>{config.label}</strong>
-                      <span>{describeQuantityInput(selectedOption?.quantityUnit)}</span>
+                      {minimumWarning ? <span className="gross-quantity-warning">{minimumWarning}</span> : null}
                     </td>
                     <td>
                       <WorkbenchSelect
@@ -305,7 +319,6 @@ export function GrossMarginMaintenancePane({
                           />
                           <small>{selectedOption?.quantityUnit || "个"}</small>
                         </span>
-                        {minimumWarning ? <small className="gross-quantity-warning">{minimumWarning}</small> : null}
                       </div>
                     </td>
                     <td>{formatUnitPrice(line?.unitPrice ?? 0)}</td>

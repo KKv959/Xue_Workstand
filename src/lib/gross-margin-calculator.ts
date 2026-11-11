@@ -179,7 +179,10 @@ export function parseGrossMarginAmount(value: string | number | undefined, max =
 }
 
 export function parseGrossMarginMetric(value: string) {
-  const match = value.trim().replace(/,/g, "").match(/^(\d+(?:\.\d+)?)\s*(万|w|千|个|元)?$/i);
+  const match = value
+    .trim()
+    .replace(/,/g, "")
+    .match(/^(\d+(?:\.\d+)?)\s*(万|w|千|个|元)?\s*(?:次|条|件|人)?$/i);
   if (!match) return null;
   const multiplier = /^(万|w)$/i.test(match[2] || "") ? 10000 : match[2] === "千" ? 1000 : 1;
   const parsed = Number(match[1]) * multiplier;

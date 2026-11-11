@@ -102,7 +102,9 @@ test("隔离资料库中的项目缓存校验、取消及远端失败保持原�
     const cli = path.join(dir, "fake-wecom");
     process.env.WECOM_CLI_BIN = cli;
     const month = getGrossMarginProjectMonth();
-    const content = fixture.replaceAll("26.10月", `${month.slice(2, 4)}.${Number(month.slice(5))}月`);
+    // Rename only this sheet so the current month cannot collide with another fixture section.
+    const sheet = fixture.slice(fixture.indexOf("26.10月"), fixture.indexOf("26.11月"));
+    const content = sheet.replace("26.10月", `${month.slice(2, 4)}.${Number(month.slice(5))}月`);
     const writeCli = (value: unknown) => fs.writeFile(cli, `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(JSON.stringify({ result: { content: [{ type: "text", text: JSON.stringify(value) }] } }))});\n`, { mode: 0o755 });
     assert.deepEqual(await getGrossMarginProjectSource(), { month, orders: [], stale: true });
     await writeCli({ errcode: 0, task_done: true, content });

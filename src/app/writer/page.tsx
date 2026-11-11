@@ -69,6 +69,7 @@ import { formatLongDraftForDisplay, LONG_DRAFT_DISPLAY_THRESHOLD } from "@/lib/w
 import type {
   AccountListItem,
   Draft,
+  DraftSummary,
   WriteRevisionScope,
   WriteStyleReferenceInput
 } from "@/lib/types";
@@ -107,7 +108,6 @@ function WriterPageContent() {
   const [styleOpen, setStyleOpen] = useState(false);
   const [researchOpen, setResearchOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [historySessionId, setHistorySessionId] = useState("");
   const closeHistory = useCallback(() => setHistoryOpen(false), []);
   const [sourceDragActive, setSourceDragActive] = useState(false);
   const [sourceImporting, setSourceImporting] = useState(false);
@@ -519,10 +519,35 @@ function WriterPageContent() {
     const params = createWriterReferenceParams(selectedStyleRefs, effectiveMode);
     router.replace(`/writer?${params.toString()}`, { scroll: false });
   }, [clearDraftResult, effectiveMode, router, selectedStyleRefs]);
-  const { handleSelectHistoryDraft, handleDeleteHistoryDraft, handleDeleteHistoryDrafts, handleRenameHistoryDraft } = useWriterHistoryActions({
+  const { handleSelectHistoryDraft, handleDeleteHistoryDraft, handleDeleteHistoryDrafts } = useWriterHistoryActions({
     historyDrafts, setDraftSummaries, lastDraftId, loadedDraftParamRef, applyLoadedDraft,
     onClearCurrent: clearHistoryCurrent, setNotice, refresh
   });
+  const handleOpenHistoryDraft = useCallback(async (draft: DraftSummary) => {
+    if (navigationBusy) return false;
+    const restoreOutput = captureEditingState();
+    const previousUrl = `/writer?${searchParams.toString()}`;
+    await handleSelectHistoryDraft(draft);
+    setUndoHistorySwitch(() => () => {
+      restoreOutput();
+      setStyleRefs(styleRefs);
+      setPrompt(prompt);
+      setSourceText(sourceText);
+      setUseWebResearch(useWebResearch);
+      setRevisionInstruction(revisionInstruction);
+      setRevisionMode(revisionMode);
+      setRevisionScope(revisionScope);
+      setSelectedDraftText(selectedDraftText);
+      loadedDraftParamRef.current = lastDraftId;
+      appliedSearchParamRef.current = previousUrl.split("?")[1] || "";
+      router.replace(previousUrl, { scroll: false });
+      setUndoHistorySwitch(null);
+    });
+    return true;
+  }, [
+    captureEditingState, handleSelectHistoryDraft, lastDraftId, navigationBusy, prompt, revisionInstruction,
+    revisionMode, revisionScope, router, searchParams, selectedDraftText, sourceText, styleRefs, useWebResearch
+  ]);
 
   if (!loading && !historyLoading && !library?.accounts.length && !historyDrafts.length && !searchParams.get("draftId")) {
     return (
@@ -560,7 +585,7 @@ function WriterPageContent() {
               <div className="section-title-row writer-setup-toolbar">
                 <h2>写作设定</h2>
                 <div className="writer-session-tools" role="group" aria-label="稿件管理">
-                  <button className="btn ghost" disabled={navigationBusy || sourceImporting} onClick={() => { setHistorySessionId(""); setHistoryOpen(true); }} type="button" aria-haspopup="dialog">
+                  <button className="btn ghost writer-history-modal-trigger" disabled={navigationBusy || sourceImporting} onClick={() => setHistoryOpen(true)} type="button" aria-haspopup="dialog">
                     <History aria-hidden="true" size={16} />历史
                   </button>
                   <button className="btn" disabled={navigationBusy || sourceImporting} onClick={handleStartNewTask} type="button">
@@ -929,40 +954,27 @@ function WriterPageContent() {
                 </section>
               ) : null}
             </div>
+            <WriterHistoryPanel
+              embedded
+              drafts={historyDrafts}
+              loading={historyLoading}
+              onClose={closeHistory}
+              onDeleteDraft={handleDeleteHistoryDraft}
+              onDeleteDrafts={handleDeleteHistoryDrafts}
+              selectedDraftId={lastDraftId}
+              onSelectDraft={handleOpenHistoryDraft}
+            />
           </div>
         </section>
 
         {historyOpen ? <WriterHistoryPanel
           drafts={historyDrafts}
           loading={historyLoading}
-          initialSessionId={historySessionId}
           onClose={closeHistory}
           onDeleteDraft={handleDeleteHistoryDraft}
           onDeleteDrafts={handleDeleteHistoryDrafts}
-          onRenameDraft={handleRenameHistoryDraft}
           selectedDraftId={lastDraftId}
-          onSelectDraft={async (draft) => {
-            if (navigationBusy) return false;
-            const restoreOutput = captureEditingState();
-            const previousUrl = `/writer?${searchParams.toString()}`;
-            await handleSelectHistoryDraft(draft);
-            setUndoHistorySwitch(() => () => {
-              restoreOutput();
-              setStyleRefs(styleRefs);
-              setPrompt(prompt);
-              setSourceText(sourceText);
-              setUseWebResearch(useWebResearch);
-              setRevisionInstruction(revisionInstruction);
-              setRevisionMode(revisionMode);
-              setRevisionScope(revisionScope);
-              setSelectedDraftText(selectedDraftText);
-              loadedDraftParamRef.current = lastDraftId;
-              appliedSearchParamRef.current = previousUrl.split("?")[1] || "";
-              router.replace(previousUrl, { scroll: false });
-              setUndoHistorySwitch(null);
-            });
-            return true;
-          }}
+          onSelectDraft={handleOpenHistoryDraft}
         /> : null}
       </section>
 

@@ -534,6 +534,21 @@
   gap: 8px;
 }
 
+.library-page .account-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.library-page .account-search-row .search-control {
+  min-width: 0;
+}
+
+.library-page .account-search-row .account-manage-toggle {
+  min-width: max-content;
+}
+
 .library-page .account-filter-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1551,6 +1566,84 @@
   min-width: 96px;
 }
 
+.library-collect-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in oklch, var(--overlay) 80%, transparent);
+  backdrop-filter: blur(16px) saturate(0.86);
+  -webkit-backdrop-filter: blur(16px) saturate(0.86);
+  overscroll-behavior: contain;
+}
+
+.library-collect-backdrop [role="dialog"] {
+  width: min(460px, 100%);
+  min-width: 0;
+  outline: none;
+}
+
+.library-collect-dialog {
+  width: 100%;
+  max-height: calc(calc(var(--app-vh) * 100) - 48px);
+  grid-template-rows: auto minmax(0, 1fr);
+  border-radius: var(--radius-xl);
+}
+
+.library-collect-dialog-header {
+  align-items: center;
+}
+
+.library-collect-dialog-header > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.library-collect-dialog-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+
+.library-collect-dialog .library-quick-form {
+  min-height: 0;
+  overflow: auto;
+  grid-template-columns: 1fr;
+  align-content: start;
+  gap: 20px;
+  padding: 18px;
+}
+
+.library-collect-dialog .library-quick-fields {
+  grid-column: auto;
+  grid-row: auto;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+.library-collect-dialog .library-quick-advanced-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 12px;
+}
+
+.library-collect-dialog .library-quick-advanced-fields > .field:nth-child(3) {
+  grid-column: 1 / -1;
+}
+
+.library-collect-dialog .library-quick-actions {
+  grid-column: auto;
+  grid-row: auto;
+  min-height: 0;
+  padding-top: 0;
+}
+
+.library-collect-dialog .library-collect-submit {
+  width: 100%;
+}
+
 .library-detail-pane .pane-body.detail-stack {
   gap: 0;
   padding: 0 var(--space-4) var(--space-4);
@@ -1804,6 +1897,40 @@
 @media (max-width: 520px) {
   .library-workspace .btn.icon-only {
     min-width: 44px;
+    min-height: 44px;
+  }
+
+  .library-page .account-search-row .account-manage-toggle {
+    min-height: 44px;
+  }
+
+  .library-collect-backdrop {
+    padding: 10px;
+  }
+
+  .library-collect-dialog {
+    max-height: calc(calc(var(--app-vh) * 100) - 20px);
+    border-radius: var(--radius-lg);
+  }
+
+  .library-collect-dialog .library-quick-form {
+    gap: 16px;
+    padding: 14px;
+  }
+
+  .library-collect-dialog .library-quick-advanced-fields {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .library-collect-dialog .library-quick-advanced-fields > .field:nth-child(3) {
+    grid-column: auto;
+  }
+
+  .library-collect-dialog .library-quick-fields :is(input, :is(select, .workbench-select-trigger), .workbench-select-trigger),
+  .library-collect-dialog .library-quick-fields .input-with-icon input,
+  .library-collect-dialog .library-platform-segmented,
+  .library-collect-dialog .library-collect-submit {
     min-height: 44px;
   }
 }

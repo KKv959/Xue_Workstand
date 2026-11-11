@@ -169,6 +169,7 @@ export function buildGrossMarginTemplateValues({
   calculation,
   currentPlayCount,
   platform,
+  projectName = "",
   splitDeliveryEnabled,
   videoTitle = "",
   videoUrl
@@ -178,6 +179,7 @@ export function buildGrossMarginTemplateValues({
   calculation: GrossMarginCalculationResult;
   currentPlayCount?: number | null;
   platform: PlatformKey;
+  projectName?: string;
   splitDeliveryEnabled: boolean;
   videoTitle?: string;
   videoUrl: string;
@@ -198,6 +200,7 @@ export function buildGrossMarginTemplateValues({
   const blueLinkLine = lines.get("blueLink");
 
   return {
+    projectName: projectName.trim(),
     accountName: displayName,
     douyinId: account?.douyinId || "",
     cooperationCode: account?.cooperationCode || "",

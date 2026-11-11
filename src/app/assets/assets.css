@@ -144,7 +144,8 @@
 }
 
 .engagement-source-panel .engagement-source-input {
-  min-height: 148px;
+  height: 372px;
+  min-height: 280px;
   resize: vertical;
 }
 
@@ -639,6 +640,11 @@
 }
 
 @media (max-width: 780px) {
+  .engagement-source-panel .engagement-source-input {
+    height: 220px;
+    min-height: 180px;
+  }
+
   .assets-workspace,
   .engagement-workbench,
   .engagement-content-grid,

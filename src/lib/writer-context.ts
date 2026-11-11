@@ -2,8 +2,8 @@ import { z } from "zod";
 
 export { WRITER_PROMPT_VERSION } from "./writer-prompts";
 const text = z.string().trim().min(1);
-const evidence = z.object({ quote: text, action: text, when: text, avoid: z.string() });
-const narrativeSchema = z.object({
+const legacyEvidence = z.object({ quote: text, action: text, when: text, avoid: z.string() });
+const legacyNarrativeSchema = z.object({
   forms: z.array(text).min(1),
   beats: z.array(z.object({ purpose: text, quote: text })).min(1),
   bridges: z.array(z.object({
@@ -12,16 +12,22 @@ const narrativeSchema = z.object({
 });
 
 export const styleEvidenceSchema = z.object({
+  summary: text,
+  quotes: z.array(text).default([])
+});
+export type StyleEvidence = z.infer<typeof styleEvidenceSchema>;
+
+const legacyStyleEvidenceSchema = z.object({
   genre: text,
   purposes: z.array(text).min(1),
   unsuitable: z.array(text),
   structure: text,
-  // Older stored analyses remain readable; newly generated analyses must include this field.
-  narrative: narrativeSchema.optional(),
-  moves: z.array(evidence).min(1),
+  narrative: legacyNarrativeSchema.optional(),
+  moves: z.array(legacyEvidence).min(1),
   limitations: z.array(text)
 });
-export type StyleEvidence = z.infer<typeof styleEvidenceSchema>;
+export const storedStyleEvidenceSchema = z.union([styleEvidenceSchema, legacyStyleEvidenceSchema]);
+export type StoredStyleEvidence = z.infer<typeof storedStyleEvidenceSchema>;
 
 const sourcedText = z.object({ text: text.max(1000), quote: text.max(2000) });
 export const writerTaskSchema = z.object({
@@ -69,32 +75,15 @@ export function parseModelJson(value: string, label: string): unknown {
 
 export function parseStyleEvidence(value: string, transcript: string, title: string): StyleEvidence {
   const parsed = styleEvidenceSchema.safeParse(parseModelJson(value, `样本「${title}」分析`));
-  if (!parsed.success) throw new Error(`样本「${title}」分析缺少用途或表达证据，请重试。`);
-  const narrative = parsed.data.narrative;
-  if (!narrative) throw new Error(`样本「${title}」分析缺少讲述方式与段落衔接，请重新分析。`);
+  if (!parsed.success) throw new Error(`样本「${title}」分析缺少讲法概括，请重试。`);
   if (styleEvidenceQuotes(parsed.data).some(quote => !transcript.includes(quote))) {
     throw new Error(`样本「${title}」的风格引句无法在原文定位，请重新分析该样本。`);
-  }
-  let end = 0;
-  for (const beat of narrative.beats) {
-    const start = transcript.indexOf(beat.quote, end);
-    if (start < 0) throw new Error(`样本「${title}」的段落顺序与原文不一致，请重新分析。`);
-    end = start + beat.quote.length;
-  }
-  for (const bridge of narrative.bridges) {
-    if (transcript.indexOf(bridge.after, transcript.indexOf(bridge.before) + bridge.before.length) < 0) {
-      throw new Error(`样本「${title}」的衔接前后顺序与原文不一致，请重新分析。`);
-    }
   }
   return parsed.data;
 }
 
 export function styleEvidenceQuotes(analysis: StyleEvidence) {
-  return [...new Set([
-    ...analysis.moves.map(move => move.quote),
-    ...(analysis.narrative?.beats.map(beat => beat.quote) || []),
-    ...(analysis.narrative?.bridges.flatMap(bridge => [bridge.before, bridge.after]) || [])
-  ])];
+  return [...new Set(analysis.quotes)];
 }
 
 export function styleEvidencePassages(analysis: StyleEvidence, transcript: string) {
@@ -133,16 +122,22 @@ export function validateStyleCardCitations(
     // A known bare source ID is a bibliography pointer, not supporting evidence for a rule.
     if (style[marker.lastIndex] !== "「") continue;
     const start = marker.lastIndex + 1;
-    const maxLength = Math.max(0, ...quotes.map(quote => quote.length));
+    const maxLength = Math.max(0, ...quotes.map(quote => normalizeCitationMarkdown(quote).length));
     let end = style.indexOf("」", start);
     let verifiedEnd = -1;
     // Quotes may themselves contain 「」. Choose the longest verified continuous excerpt.
-    while (end >= 0 && end - start <= maxLength) {
+    while (end >= 0) {
       const excerpt = style.slice(start, end);
-      if (excerpt.trim() && quotes.some(quote => quote.includes(excerpt))) verifiedEnd = end;
+      const normalizedExcerpt = normalizeCitationMarkdown(excerpt);
+      if (normalizedExcerpt.length > maxLength) break;
+      if (normalizedExcerpt.trim() && quotes.some(quote => normalizeCitationMarkdown(quote).includes(normalizedExcerpt))) verifiedEnd = end;
       end = style.indexOf("」", end + 1);
     }
     if (verifiedEnd < 0) throw invalidCitation();
     marker.lastIndex = verifiedEnd + 1;
   }
+}
+
+function normalizeCitationMarkdown(value: string) {
+  return value.replace(/[ \t]+\r?\n/g, "\n");
 }

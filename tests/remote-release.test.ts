@@ -31,15 +31,30 @@ async function temporary(run: (root: string) => Promise<void>) {
 
 test("候选指纹覆盖源码、依赖、配置、环境和工具版本，拒绝源码符号链接", async () => temporary(async root => {
   const fingerprint = () => helpers.releaseInputs(root, { CUSTOM: "one" }, "10");
-  for (const file of ["src/app.ts", "package-lock.json", ".env.local", ".npmrc", "tests/new.test.ts"]) {
+  for (const file of ["src/app.ts", "package.json", "package-lock.json", ".env.local", ".npmrc", "tests/new.test.ts"]) {
     const before = await fingerprint();
     await fs.promises.mkdir(path.dirname(path.join(root, file)), { recursive: true });
     await fs.promises.writeFile(path.join(root, file), "changed");
-    assert.notEqual((await fingerprint()).fingerprint, before.fingerprint, file);
+    const after = await fingerprint();
+    assert.notEqual(after.fingerprint, before.fingerprint, file);
+    if (["package.json", "package-lock.json", ".npmrc"].includes(file)) {
+      assert.notEqual(after.dependencyFingerprint, before.dependencyFingerprint, file);
+    } else {
+      assert.equal(after.dependencyFingerprint, before.dependencyFingerprint, file);
+    }
   }
   const current = await fingerprint();
+  assert.equal((await helpers.releaseInputs(root, {
+    CUSTOM: "one", PWD: "/another-shell", INIT_CWD: "/another-shell", CODEX_TOOL_CALL_ID: "first-call", CODEX_THREAD_ID: "first-thread",
+    npm_lifecycle_event: "remote:build", npm_lifecycle_script: "node scripts/remote-server.mjs build", npm_command: "run-script"
+  }, "10")).fingerprint, current.fingerprint);
+  assert.equal((await helpers.releaseInputs(root, {
+    CUSTOM: "one", CODEX_TOOL_CALL_ID: "next-call", CODEX_THREAD_ID: "next-thread", npm_lifecycle_event: "remote:deploy", npm_lifecycle_script: "node scripts/remote-server.mjs deploy"
+  }, "10")).fingerprint, current.fingerprint);
   assert.notEqual((await helpers.releaseInputs(root, { CUSTOM: "two" }, "10")).fingerprint, current.fingerprint);
   assert.notEqual((await helpers.releaseInputs(root, { CUSTOM: "one" }, "11")).fingerprint, current.fingerprint);
+  assert.notEqual((await helpers.releaseInputs(root, { CUSTOM: "one" }, "11")).dependencyFingerprint, current.dependencyFingerprint);
+  assert.notEqual((await helpers.releaseInputs(root, { CUSTOM: "two" }, "10")).dependencyFingerprint, current.dependencyFingerprint);
   await fs.promises.symlink("../package-lock.json", path.join(root, "src/link"));
   await assert.rejects(fingerprint(), /符号链接/);
 }));
@@ -50,7 +65,7 @@ test("只有验证完成且完整产物未被改动的候选可复用", async ()
   await fs.promises.mkdir(path.join(release, ".next"));
   await fs.promises.writeFile(path.join(release, "server.js"), "server");
   await helpers.writeJsonAtomic(path.join(release, "REMOTE_BUILD.json"), { buildId: "build-1", fingerprint: "input" });
-  const candidate = { schemaVersion: 1, buildId: "build-1", fingerprint: "input", validation: "passed", artifactDigest: await helpers.hashArtifact(release) };
+  const candidate = { schemaVersion: 1, buildId: "build-1", fingerprint: "input", validation: "build-passed", artifactDigest: await helpers.hashArtifact(release) };
   await helpers.writeJsonAtomic(path.join(root, "candidate.json"), candidate);
   assert.ok(await helpers.readCandidate(root, "input"));
   await fs.promises.mkdir(path.join(release, ".next/cache"));
@@ -68,11 +83,11 @@ test("只有验证完成且完整产物未被改动的候选可复用", async ()
   assert.equal(await helpers.readCandidate(root, "input"), null);
 }));
 
-test("构建隔离运行测试/lint/类型检查，失败不生成候选，成功记录产物", async () => temporary(async root => {
+test("隔离构建只安装依赖和构建检查类型；任一阶段失败不生成候选", async () => temporary(async root => {
   const stateRoot = path.join(root, ".remote-server");
   const inputs = await helpers.releaseInputs(root, process.env, "10");
   const commands: string[] = [];
-  let fail = true;
+  let failingStage = "";
   const build = script("buildRelease", {
     root, stateRoot, releasesRoot: path.join(stateRoot, "releases"),
     capture: () => ({ stdout: "abc" }), makeBuildId: () => "build-1", readPackageVersion: () => "1",
@@ -81,22 +96,82 @@ test("构建隔离运行测试/lint/类型检查，失败不生成候选，成�
       commands.push(args.join(" "));
       assert.notEqual(options.cwd, root);
       assert.notEqual(options.env.STYLE_LIBRARY_DIR, path.join(root, "style-library"));
-      if (args[0] === "test" && fail) throw new Error("test failed");
+      if (args.includes(failingStage)) throw new Error(`${failingStage} failed`);
+      if (args[0] === "ci") await fs.promises.mkdir(path.join(options.cwd, "node_modules"));
       if (args[1] === "build") {
         await fs.promises.mkdir(path.join(options.cwd, ".next/standalone"), { recursive: true });
         await fs.promises.mkdir(path.join(options.cwd, ".next/static"));
         await fs.promises.writeFile(path.join(options.cwd, ".next/standalone/server.js"), "built");
       }
     }
-  });
-  await assert.rejects(build(inputs, "10"), /test failed/);
-  assert.equal(await helpers.readCandidate(stateRoot, inputs.fingerprint), null);
-  fail = false;
+  }, ["withBuildDependencies"]);
+  for (const stage of ["ci", "build"]) {
+    failingStage = stage;
+    await assert.rejects(build(inputs, "10"), /failed/);
+    assert.equal(await helpers.readCandidate(stateRoot, inputs.fingerprint), null);
+  }
+  failingStage = "";
   commands.length = 0;
   await build(inputs, "10");
-  assert.deepEqual(commands, ["ci --include=dev --prefer-offline --no-audit --no-fund", "test", "run lint", "run build -- --no-lint"]);
+  assert.deepEqual(commands, ["run build -- --no-lint"]);
   assert.ok(await helpers.readCandidate(stateRoot, inputs.fingerprint));
 }));
+
+test("构建依赖首次安装后可复用，编译失败保留依赖，依赖变化或缓存丢失重新安装", async () => temporary(async root => {
+  const stateRoot = path.join(root, ".remote-server");
+  const stagingRoot = path.join(root, "source");
+  await fs.promises.mkdir(stagingRoot);
+  let installs = 0, installFails = false;
+  const withDependencies = script("withBuildDependencies", {
+    stateRoot, timed: (_label: string, action: () => Promise<unknown>) => action(),
+    run: async () => {
+      installs++;
+      await fs.promises.mkdir(path.join(stagingRoot, "node_modules"), { recursive: true });
+      if (installFails) throw new Error("install failed");
+      await fs.promises.writeFile(path.join(stagingRoot, "node_modules/fixture"), "installed");
+    }
+  });
+  const build = async () => {
+    assert.equal(await fs.promises.readFile(path.join(stagingRoot, "node_modules/fixture"), "utf8"), "installed");
+    assert.equal(fs.existsSync(path.join(stagingRoot, ".npmrc")), false);
+    return "built";
+  };
+  await fs.promises.writeFile(path.join(stagingRoot, ".npmrc"), "registry=fixture");
+  assert.equal(await withDependencies(stagingRoot, "one", {}, build), "built");
+  await assert.rejects(withDependencies(stagingRoot, "one", {}, async () => { throw new Error("build failed"); }), /build failed/);
+  assert.equal(await withDependencies(stagingRoot, "one", {}, build), "built");
+  assert.equal(installs, 1);
+  installFails = true;
+  await assert.rejects(withDependencies(stagingRoot, "two", {}, build), /install failed/);
+  assert.equal(await fs.promises.readFile(path.join(stateRoot, "build-dependencies/fingerprint"), "utf8"), "one");
+  await fs.promises.rm(path.join(stagingRoot, "node_modules"), { recursive: true });
+  installFails = false;
+  await withDependencies(stagingRoot, "two", {}, build);
+  assert.equal(installs, 3);
+  await fs.promises.rm(path.join(stateRoot, "build-dependencies/node_modules"), { recursive: true });
+  await withDependencies(stagingRoot, "two", {}, build);
+  assert.equal(installs, 4);
+}));
+
+test("单独构建生成候选后，发布准备复用同一产物；配置变化才重新构建", async () => {
+  let builds = 0;
+  let fingerprint = "same";
+  let candidate: { buildId: string; fingerprint: string } | null = null;
+  const prepare = script("prepareRelease", {
+    root: "/isolated", stateRoot: "/isolated/.remote-server",
+    capture: () => ({ ok: true, stdout: "10" }),
+    releaseInputs: async () => ({ fingerprint }),
+    readCandidate: async (_root: string, key: string) => candidate?.fingerprint === key ? candidate : null,
+    buildRelease: async () => { builds++; return candidate = { buildId: `build-${builds}`, fingerprint }; }
+  });
+  const main = script("main", { command: "build", prepareRelease: prepare });
+  const first = await main();
+  assert.equal((await prepare()).build, first.build);
+  assert.equal(builds, 1);
+  fingerprint = "changed";
+  assert.notEqual((await prepare()).build.buildId, first.build.buildId);
+  assert.equal(builds, 2);
+});
 
 test("构建后任务阻断保留候选，重试不重复安装构建且仍检查资料库和任务", async () => {
   let builds = 0, checks = 0, activations = 0, blocked = true;
@@ -111,7 +186,7 @@ test("构建后任务阻断保留候选，重试不重复安装构建且仍检�
     assertNoActiveJobs: async () => { if (blocked) throw new Error("运行或排队任务"); },
     fetchJson: async () => ({ ok: true, data: {} }), withTaskProtection: async (action: () => Promise<unknown>) => action(),
     activateWithRecovery: async () => { activations++; }, pruneReleases: async () => undefined
-  });
+  }, ["prepareRelease"]);
   await assert.rejects(deploy(), /候选 new 已保留/);
   assert.equal(activations, 0);
   blocked = false;
@@ -146,7 +221,7 @@ test("切换入口统一上锁，任务门禁拒绝新请求并在失败后释�
     if (previous === undefined) delete process.env.WORKBENCH_SOURCE_ROOT;
     else process.env.WORKBENCH_SOURCE_ROOT = previous;
   }
-  assert.match(source, /\["setup", "start", "stop", "dev", "deploy", "rollback"\].*withServiceLock/);
+  assert.match(source, /\["setup", "start", "stop", "dev", "deploy", "rollback", "build"\].*withServiceLock/);
 }));
 
 test("macOS 服务锁拒绝并发并在异常后释放", { skip: process.platform !== "darwin" }, async () => temporary(async root => {
@@ -250,9 +325,9 @@ test("清理保留上一健康版本，不保留更新但失败的目录", async
   assert.deepEqual((await fs.promises.readdir(releasesRoot)).sort(), ["current", "healthy"]);
 }));
 
-test("启停及模式入口在任务保护通过前没有服务副作用", async () => {
+test("启停及模式入口受任务保护，单独构建只取锁且不暂停任务", async () => {
   const entry = ast.statements.find(ts.isTryStatement)!.getText(ast);
-  for (const command of ["setup", "start", "stop", "dev"]) {
+  for (const command of ["setup", "start", "stop", "dev", "build"]) {
     const events: string[] = [];
     const fakeProcess = { exitCode: 0 };
     await vm.runInNewContext(`(async () => { ${entry} })()`, {
@@ -261,8 +336,8 @@ test("启停及模式入口在任务保护通过前没有服务副作用", async
       withTaskProtection: async () => { events.push("guard"); throw new Error("任务状态不安全"); },
       main: async () => { events.push("side effect"); }
     });
-    assert.deepEqual(events, ["lock", "guard"], command);
-    assert.equal(fakeProcess.exitCode, 1);
+    assert.deepEqual(events, command === "build" ? ["lock", "side effect"] : ["lock", "guard"], command);
+    assert.equal(fakeProcess.exitCode, command === "build" ? 0 : 1);
   }
 });
 

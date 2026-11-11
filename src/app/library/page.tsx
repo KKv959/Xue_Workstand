@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronLeft, FileText, Plus, RefreshCw, X } from "lucide-react";
+import { ChevronLeft, FileText, RefreshCw } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { updateLibraryUrl } from "./_components/library-url";
 import { AccountSidebar } from "./_components/AccountSidebar";
@@ -70,7 +70,7 @@ function LibraryPageContent() {
   const [customFromDate, setCustomFromDate] = useState("");
   const [customToDate, setCustomToDate] = useState("");
   const [refreshBusy, setRefreshBusy] = useState(false);
-  const [collectPanelOpen, setCollectPanelOpen] = useState(true);
+  const [collectPanelOpen, setCollectPanelOpen] = useState(false);
   const [lastCollect, setLastCollect] = useState<CollectResult | null>(null);
   const [activeCollectJobId, setActiveCollectJobId] = useState("");
   const setMobileView = useCallback((view: "accounts" | "videos" | "detail") => {
@@ -376,31 +376,6 @@ function LibraryPageContent() {
     }
   }, [selectedAccount, setBusy, setMessage]);
 
-  const handleRecollectSelectedAccount = useCallback(async () => {
-    if (!selectedAccount || busy) return;
-    setBusy("recollect");
-    setMessage("");
-    try {
-      const job = await startTask({
-        kind: "collect-account",
-        href: "/library",
-        title: `更新账号：${selectedAccount.name}`,
-        input: {
-          platform: selectedAccount.platform,
-          name: selectedAccount.sourceUrl || selectedAccount.uid || selectedAccount.name,
-          limit: collectLimit,
-          order: normalizeCollectOrder(selectedAccount.platform, collectOrder),
-          ...collectDateFilter
-        }
-      });
-      setActiveCollectJobId(job.id);
-      setMessage("账号更新任务已加入任务中心。", "info");
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "更新账号失败，请检查主页链接或采集环境后重试。", "error");
-      setBusy("");
-    }
-  }, [busy, collectDateFilter, collectLimit, collectOrder, selectedAccount, setBusy, setMessage, startTask]);
-
   useEffect(() => {
     if (!activeCollectJobId) return;
     const job = [...activeJobs, ...recentJobs].find((item) => item.id === activeCollectJobId);
@@ -514,26 +489,6 @@ function LibraryPageContent() {
         </div>
         <div className="page-header-meta">
           <button
-            aria-controls="library-collect-panel"
-            aria-expanded={collectPanelOpen}
-            className={`btn compact ${collectPanelOpen ? "" : "primary"}`}
-            onClick={() => setCollectPanelOpen((current) => !current)}
-            type="button"
-          >
-            {collectPanelOpen ? <X aria-hidden="true" size={16} /> : <Plus aria-hidden="true" size={16} />}
-            {collectPanelOpen ? "收起" : "采集"}
-          </button>
-          <button
-            aria-busy={busy === "recollect"}
-            className="btn compact"
-            disabled={!selectedAccount || Boolean(busy)}
-            onClick={handleRecollectSelectedAccount}
-            type="button"
-          >
-            <RefreshCw aria-hidden="true" size={16} />
-            {busy === "recollect" ? "更新中" : "更新"}
-          </button>
-          <button
             aria-busy={refreshBusy}
             aria-label={refreshBusy ? "正在刷新账号库" : "刷新账号库"}
             className="btn ghost compact icon-btn icon-only"
@@ -567,28 +522,6 @@ function LibraryPageContent() {
         </strong>
       </div>
 
-      {collectPanelOpen ? (
-        <LibraryQuickStartPanel
-          activeOrderOptions={activeOrderOptions}
-          busy={busy}
-          canSubmit={canCollect}
-          customFromDate={customFromDate}
-          customToDate={customToDate}
-          limit={collectLimit}
-          name={collectName}
-          order={collectOrder}
-          platform={collectPlatform}
-          timeRange={collectTimeRange}
-          onCollect={handleCollect}
-          onCustomFromDateChange={setCustomFromDate}
-          onCustomToDateChange={setCustomToDate}
-          onLimitChange={setCollectLimit}
-          onNameChange={setCollectName}
-          onOrderChange={setCollectOrder}
-          onPlatformChange={handleCollectPlatformChange}
-          onTimeRangeChange={setCollectTimeRange}
-        />
-      ) : null}
       {error || accountDetailError ? (
         <div className="library-error-stack">
           {error ? <div className="error" role="alert">{error}</div> : null}
@@ -601,6 +534,7 @@ function LibraryPageContent() {
           accountManageMode={accountManageMode}
           accounts={filteredAccounts}
           busy={busy}
+          collectPanelOpen={collectPanelOpen}
           loading={initialLibraryLoading}
           selectedAccountId={selectedAccountMeta?.id || ""}
           selectedAccountIds={selectedAccountIds}
@@ -610,7 +544,15 @@ function LibraryPageContent() {
           onSelectAccount={(accountId) => {
             selectAccount(accountId, "videos");
           }}
+          onToggleCollectPanel={() => {
+            setAccountManageMode(false);
+            setSelectedAccountIds([]);
+            setVideoManageMode(false);
+            setSelectedVideoIds([]);
+            setCollectPanelOpen((current) => !current);
+          }}
           onToggleAccountManage={() => {
+            setCollectPanelOpen(false);
             setVideoManageMode(false);
             setSelectedVideoIds([]);
             toggleAccountManage();
@@ -618,6 +560,30 @@ function LibraryPageContent() {
           onToggleAllAccounts={handleToggleAllAccounts}
           onToggleManagedAccount={toggleManagedAccount}
         />
+        {collectPanelOpen ? (
+          <LibraryQuickStartPanel
+            activeOrderOptions={activeOrderOptions}
+            busy={busy}
+            canSubmit={canCollect}
+            customFromDate={customFromDate}
+            customToDate={customToDate}
+            limit={collectLimit}
+            name={collectName}
+            order={collectOrder}
+            platform={collectPlatform}
+            timeRange={collectTimeRange}
+            variant="drawer"
+            onClose={() => setCollectPanelOpen(false)}
+            onCollect={handleCollect}
+            onCustomFromDateChange={setCustomFromDate}
+            onCustomToDateChange={setCustomToDate}
+            onLimitChange={setCollectLimit}
+            onNameChange={setCollectName}
+            onOrderChange={setCollectOrder}
+            onPlatformChange={handleCollectPlatformChange}
+            onTimeRangeChange={setCollectTimeRange}
+          />
+        ) : null}
 
         <VideoTable
           accountDetailLoading={accountDetailLoading}

@@ -22,6 +22,31 @@ import type { GrossMarginMonitorRecord, GrossMarginPriceTable } from "../src/lib
 
 const timestamp = "2026-01-01T00:00:00.000Z";
 
+test("切换手动项目保留原档位价格，带入当前项目名并清空返点和折后价格", () => {
+  const source = readFileSync("src/app/gross-margin/_hooks/useGrossMarginWorkbench.ts", "utf8");
+  const handler = source.match(/  function handleProjectChange\(id: string\) \{[\s\S]*?\n  \}/)![0];
+  let originalPrice = "12000", rebateRate = "20", discountPrice = "9600";
+  let selection: { context: string; id: string; name?: string } | null = null;
+  const rebateRateRef = { current: rebateRate };
+  const run = vm.runInNewContext(ts.transpileModule(`${handler}\nhandleProjectChange`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 }
+  }).outputText, {
+    projectContext: "douyin:账号:链接", projectName: "原项目", rebateRateRef,
+    setProjectSelection: (value: typeof selection) => { selection = value; },
+    setOriginalPrice: (value: string) => { originalPrice = value; },
+    setRebateRate: (value: string) => { rebateRate = value; },
+    setDiscountPrice: (value: string) => { discountPrice = value; }
+  });
+  run("manual");
+  assert.equal(originalPrice, "12000");
+  assert.equal(rebateRate, "");
+  assert.equal(rebateRateRef.current, "");
+  assert.equal(discountPrice, "");
+  assert.equal(JSON.stringify(selection), JSON.stringify({ context: "douyin:账号:链接", id: "manual", name: "原项目" }));
+  run("order-2");
+  assert.equal(JSON.stringify(selection), JSON.stringify({ context: "douyin:账号:链接", id: "order-2", name: "" }));
+});
+
 test("切换账号清空返点后，新账号报价不沿用上一笔尚未提交的返点状态", () => {
   const source = readFileSync("src/app/gross-margin/_hooks/useGrossMarginWorkbench.ts", "utf8");
   const handler = source.match(/  function updateOriginalPrice\(value: string\) \{[\s\S]*?\n  \}/)![0];

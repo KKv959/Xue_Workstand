@@ -55,7 +55,7 @@
 .radar-view-switch { display: flex; gap: 4px; padding: 4px; background: var(--panel-soft); border-radius: var(--radius-md); }
 .radar-view-switch .btn { border-color: transparent; background: transparent; box-shadow: none; }
 .radar-view-switch .btn[aria-pressed="true"] { background: var(--panel-raised); color: var(--accent-strong); box-shadow: var(--shadow-sm); }
-.radar-filters { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
+.radar-filters { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
 .radar-filters .field { min-width: 120px; margin: 0; }
 .radar-filters :is(select, .workbench-select-trigger) { width: 100%; max-width: 200px; }
 .radar-search { flex: 1; max-width: 370px; min-width: 220px !important; }
@@ -81,7 +81,7 @@
 .radar-card-title { font-size: 17px; line-height: 1.6; font-weight: 650; min-height: 3.2em; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .radar-card-summary { font-size: 13px; color: var(--muted-strong); line-height: 1.8; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .radar-card-angle { margin-top: auto; background: var(--panel-soft); padding: 10px 12px; border-radius: var(--radius-sm); font-size: 12px; line-height: 1.7; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.radar-card-footer { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-top: auto; color: var(--muted); font-size: 11px; }
+.radar-card-footer { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: auto; color: var(--muted); font-size: 11px; }
 .radar-card-footer > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .radar-card-footer time { display: block; margin-top: 5px; }
 .radar-card-footer > span:last-child { display: flex; align-items: center; flex-shrink: 0; gap: 4px; color: var(--accent-strong); }
@@ -94,7 +94,7 @@
 .radar-group header .btn { margin-left: auto; flex-shrink: 0; }
 .radar-group ol { list-style: none; padding: 0; margin: 0; }
 .radar-group li + li { border-top: 1px solid var(--line-subtle); }
-.radar-group-story { width: 100%; display: flex; align-items: start; gap: 12px; padding: 16px 0; background: transparent; border: 0; font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.radar-group-story { width: 100%; display: flex; align-items: flex-start; gap: 12px; padding: 16px 0; background: transparent; border: 0; font: inherit; color: var(--text); text-align: left; cursor: pointer; }
 .radar-group-story:hover strong { color: var(--accent-strong); }
 .radar-row-number { padding-top: 3px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .radar-group-story > span:last-child { min-width: 0; }

@@ -122,7 +122,7 @@ export function useLibraryTaskEffects({
         result?.cached
           ? "样本未变化，已复用现有风格卡。"
           : result?.fallback
-          ? `已降级生成风格卡：${result.fallbackReason || "模型没有返回可用内容，已用本地模板生成，可继续编辑。"}`
+          ? `风格卡由历史兼容结果更新：${result.fallbackReason || "历史任务使用了兼容结果。"}`
           : result?.generationMode === "incremental"
           ? "已根据新增/变化样本增量更新风格卡。"
           : "已自动总结风格卡。",
@@ -248,7 +248,7 @@ function summarizeBatchTranscribeResult(result: BatchTranscribeResult) {
   if (!result.styleUpdated && !result.styleError && !result.style) return baseMessage;
   if (result.styleUpdated) {
     return result.fallback
-      ? `${baseMessage} 风格卡已降级更新：${result.fallbackReason || "模型没有返回可用内容，已用本地模板生成，可继续编辑。"}`
+      ? `${baseMessage} 风格卡由历史兼容结果更新：${result.fallbackReason || "历史任务使用了兼容结果。"}`
       : `${baseMessage} 风格卡已同步更新。`;
   }
   if (result.styleError) return `${baseMessage} 风格卡未更新：${result.styleError}`;

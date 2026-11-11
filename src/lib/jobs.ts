@@ -15,7 +15,7 @@ import {
   prepareWriteCopyBatchContext,
   prepareWriteCopyContext,
   resolveWriteBatchOutcome,
-  streamStyleResponseTextWithFallback,
+  streamStyleResponseText,
   streamResponseTextWithFallback,
   writeVariantFailure,
   WRITE_COPY_REASONING_EFFORT
@@ -912,7 +912,7 @@ async function runAccountStyleJob(jobId: string, start: Extract<JobStartInput, {
     message: context.generationMode === "incremental" ? "正在增量更新账号风格卡" : "正在生成账号风格卡",
     progress: 35
   });
-  const result = await streamStyleResponseTextWithFallback({
+  const result = await streamStyleResponseText({
     messages: context.messages,
     signal: getJobAbortSignal(jobId),
     onDelta(delta) {

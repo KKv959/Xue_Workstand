@@ -1,6 +1,6 @@
 import path from "path";
 import { z } from "zod";
-import { styleEvidenceSchema, writerContextSchema } from "../writer-context";
+import { storedStyleEvidenceSchema, writerContextSchema } from "../writer-context";
 import { imageGenerationInputSchema } from "../image-generation-types";
 import { jobKinds } from "../types";
 import { startJobSchema } from "../job-validation";
@@ -198,7 +198,7 @@ const styleAnalysisSchema = versionedObject.extend({
   version: z.literal(1), cacheKey: z.string().min(1),
   kind: z.enum(["account-video", "copy-source"]), sourceId: z.string().min(1),
   title: z.string(), inputChars: z.number().nonnegative(), analysis: z.string(),
-  evidence: styleEvidenceSchema.optional(), usedModel: z.string(),
+  evidence: storedStyleEvidenceSchema.optional(), usedModel: z.string(),
   reasoningEffort: z.string(), generatedAt: timestampSchema
 }).passthrough();
 

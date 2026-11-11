@@ -10,6 +10,52 @@ const savedBatchSchema = z.object({
 
 export const writerSessionId = (draft: DraftSummary) => draft.version?.sessionId || draft.id;
 
+export type WriterHistorySession = {
+  id: string;
+  versions: DraftSummary[];
+  latest: DraftSummary;
+};
+
+export type WriterHistoryProject = {
+  id: string;
+  title: string;
+  sessions: WriterHistorySession[];
+  latest: DraftSummary;
+  versionCount: number;
+};
+
+export function groupWriterHistoryProjects(drafts: DraftSummary[]): WriterHistoryProject[] {
+  const bySession = new Map<string, DraftSummary[]>();
+  for (const draft of drafts) {
+    const id = writerSessionId(draft);
+    const versions = bySession.get(id) || [];
+    versions.push(draft);
+    bySession.set(id, versions);
+  }
+
+  const byProject = new Map<string, WriterHistorySession[]>();
+  for (const [id, versions] of bySession) {
+    versions.sort((a, b) => (b.version?.revision || 1) - (a.version?.revision || 1) || +new Date(b.createdAt) - +new Date(a.createdAt));
+    const session = { id, versions, latest: versions[0] };
+    const projectId = session.latest.version?.batchId || id;
+    const sessions = byProject.get(projectId) || [];
+    sessions.push(session);
+    byProject.set(projectId, sessions);
+  }
+
+  return [...byProject].map(([id, sessions]) => {
+    sessions.sort((a, b) => +new Date(b.latest.createdAt) - +new Date(a.latest.createdAt));
+    const latest = sessions[0].latest;
+    return {
+      id,
+      title: latest.version?.batchId ? latest.title.split(/\s+·\s+/)[0] : latest.title,
+      sessions,
+      latest,
+      versionCount: sessions.reduce((total, session) => total + session.versions.length, 0)
+    };
+  }).sort((a, b) => +new Date(b.latest.createdAt) - +new Date(a.latest.createdAt));
+}
+
 /** Read exact persisted associations only; never infer a batch from similar text or dates. */
 export function savedBatchSessions(result: unknown, selected: DraftSummary): string[] {
   const parsed = savedBatchSchema.safeParse(result);

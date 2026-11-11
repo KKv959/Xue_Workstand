@@ -359,7 +359,7 @@
 }
 
 .gross-maintenance-table td {
-  padding: 8px 9px;
+  padding: 6px 9px;
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
@@ -470,6 +470,11 @@
   font-size: 11px;
   line-height: 1.35;
   white-space: normal;
+}
+
+.gross-maintenance-table td:first-child .gross-quantity-warning {
+  color: var(--danger, #c2413b);
+  font-size: 10px;
 }
 
 .gross-export-row {
@@ -2027,6 +2032,18 @@
 }
 
 @media (max-width: 1180px) {
+  .gross-margin-workspace {
+    grid-template-columns: 220px minmax(680px, 1fr) 250px;
+  }
+
+  .gross-account-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .gross-account-row > .field:last-child {
+    grid-column: 1 / -1;
+  }
+
   .gross-monitor-card-grid {
     grid-template-columns: repeat(auto-fill, minmax(286px, 1fr));
   }
@@ -2098,6 +2115,31 @@
 }
 
 @media (max-width: 780px) {
+  .gross-margin-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    overflow: visible;
+  }
+
+  .gross-price-pane,
+  .gross-maintenance-pane,
+  .gross-result-pane {
+    max-width: none;
+  }
+
+  .gross-account-row,
+  .gross-price-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .gross-account-row > .field:last-child {
+    grid-column: auto;
+  }
+
+  .gross-maintenance-table-wrap {
+    overflow-x: auto;
+  }
+
   .gross-result-pane .pane-header .btn.primary.compact {
     width: 100%;
   }
@@ -2127,6 +2169,7 @@
 
   .gross-template-layout {
     grid-template-columns: 1fr;
+    grid-auto-rows: max-content;
     overflow: auto;
   }
 

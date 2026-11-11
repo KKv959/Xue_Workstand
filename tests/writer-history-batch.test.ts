@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { savedBatchSessions, selectWriterBatchDrafts } from "../src/lib/writer-history-batch";
+import { groupWriterHistoryProjects, savedBatchSessions, selectWriterBatchDrafts } from "../src/lib/writer-history-batch";
 import type { DraftSummary } from "../src/lib/types";
 
 function draft(id: string, sessionId: string, revision = 1, batchId?: string): DraftSummary {
@@ -30,4 +30,22 @@ test("deleted siblings are not resurrected from job snapshots; malformed or comp
   const a = draft("a", "a");
   assert.deepEqual(selectWriterBatchDrafts(a, [a], ["a", "deleted"]).map(d => d.id), ["a"]);
   for (const result of [undefined, {}, { kind: "write-batch", results: null }]) assert.deepEqual(savedBatchSessions(result, a), []);
+});
+
+test("groups one concurrent batch as one history project while retaining manuscripts and versions", () => {
+  const drafts = [
+    draft("a1", "a", 1, "batch"),
+    draft("a2", "a", 2, "batch"),
+    draft("b1", "b", 1, "batch"),
+    draft("single", "single")
+  ];
+  drafts[0].title = drafts[1].title = "我的世界联动 · 风格甲";
+  drafts[2].title = "我的世界联动 · 风格乙";
+
+  const projects = groupWriterHistoryProjects(drafts);
+  assert.equal(projects.length, 2);
+  assert.equal(projects[0].title, "我的世界联动");
+  assert.equal(projects[0].sessions.length, 2);
+  assert.equal(projects[0].versionCount, 3);
+  assert.deepEqual(projects[0].sessions.map(session => session.latest.id).sort(), ["a2", "b1"]);
 });

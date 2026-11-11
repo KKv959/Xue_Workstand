@@ -1,6 +1,8 @@
 "use client";
 
-import { Monitor, Music2, Play, Search } from "lucide-react";
+import { useRef, type RefObject } from "react";
+import { Monitor, Music2, Play, Search, X } from "lucide-react";
+import { ModalBackdrop } from "@/components/ModalBackdrop";
 import { WorkbenchSelect } from "@/components/WorkbenchSelect";
 import type { CollectOrder, Platform } from "@/lib/types";
 import { timeRangeOptions, type TimeRange } from "./library-collect-utils";
@@ -16,7 +18,9 @@ type LibraryQuickStartPanelProps = {
   order: CollectOrder;
   platform: Platform;
   timeRange: TimeRange;
+  variant?: "panel" | "drawer";
   onCollect: () => void;
+  onClose?: () => void;
   onCustomFromDateChange: (value: string) => void;
   onCustomToDateChange: (value: string) => void;
   onLimitChange: (value: number) => void;
@@ -37,7 +41,9 @@ export function LibraryQuickStartPanel({
   order,
   platform,
   timeRange,
+  variant = "panel",
   onCollect,
+  onClose,
   onCustomFromDateChange,
   onCustomToDateChange,
   onLimitChange,
@@ -46,46 +52,78 @@ export function LibraryQuickStartPanel({
   onPlatformChange,
   onTimeRangeChange
 }: LibraryQuickStartPanelProps) {
+  const accountInputRef = useRef<HTMLInputElement>(null);
+  const form = (
+    <form
+      className="library-quick-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (canSubmit) onCollect();
+      }}
+    >
+      <div className="library-quick-fields">
+        <CollectControls
+          accountInputRef={accountInputRef}
+          activeOrderOptions={activeOrderOptions}
+          customFromDate={customFromDate}
+          customToDate={customToDate}
+          limit={limit}
+          name={name}
+          order={order}
+          platform={platform}
+          timeRange={timeRange}
+          onCustomFromDateChange={onCustomFromDateChange}
+          onCustomToDateChange={onCustomToDateChange}
+          onLimitChange={onLimitChange}
+          onNameChange={onNameChange}
+          onOrderChange={onOrderChange}
+          onPlatformChange={onPlatformChange}
+          onTimeRangeChange={onTimeRangeChange}
+        />
+      </div>
+      <div className="library-quick-actions">
+        <button className="btn primary library-collect-submit" aria-busy={busy === "collect"} disabled={!canSubmit} type="submit">
+          <Play aria-hidden="true" size={16} />
+          {busy === "collect" ? "采集中" : "开始采集"}
+        </button>
+      </div>
+    </form>
+  );
+
+  if (variant === "drawer" && onClose) {
+    return (
+      <ModalBackdrop
+        aria-labelledby="library-collect-title"
+        backdropClassName="library-collect-backdrop"
+        disabled={busy === "collect"}
+        initialFocusRef={accountInputRef}
+        onClose={onClose}
+      >
+        <section className="modal-panel library-collect-dialog" id="library-collect-dialog">
+          <header className="modal-header library-collect-dialog-header">
+            <div>
+              <h2 id="library-collect-title">采集账号</h2>
+              <p>添加账号视频到账号库</p>
+            </div>
+            <button aria-label="关闭采集面板" className="btn ghost compact icon-btn icon-only" disabled={busy === "collect"} onClick={onClose} type="button">
+              <X aria-hidden="true" size={17} />
+            </button>
+          </header>
+          {form}
+        </section>
+      </ModalBackdrop>
+    );
+  }
+
   return (
     <section id="library-collect-panel" className="panel library-quick-start workbench-leading-panel advanced-open" aria-label="账号采集">
-      <form
-        className="library-quick-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (canSubmit) onCollect();
-        }}
-      >
-        <div className="library-quick-fields">
-          <CollectControls
-            activeOrderOptions={activeOrderOptions}
-            customFromDate={customFromDate}
-            customToDate={customToDate}
-            limit={limit}
-            name={name}
-            order={order}
-            platform={platform}
-            timeRange={timeRange}
-            onCustomFromDateChange={onCustomFromDateChange}
-            onCustomToDateChange={onCustomToDateChange}
-            onLimitChange={onLimitChange}
-            onNameChange={onNameChange}
-            onOrderChange={onOrderChange}
-            onPlatformChange={onPlatformChange}
-            onTimeRangeChange={onTimeRangeChange}
-          />
-        </div>
-        <div className="library-quick-actions">
-          <button className="btn primary library-collect-submit" aria-busy={busy === "collect"} disabled={!canSubmit} type="submit">
-            <Play aria-hidden="true" size={16} />
-            {busy === "collect" ? "采集中" : "采集"}
-          </button>
-        </div>
-      </form>
+      {form}
     </section>
   );
 }
 
 function CollectControls({
+  accountInputRef,
   activeOrderOptions,
   customFromDate,
   customToDate,
@@ -118,7 +156,7 @@ function CollectControls({
   | "onOrderChange"
   | "onPlatformChange"
   | "onTimeRangeChange"
->) {
+> & { accountInputRef: RefObject<HTMLInputElement | null> }) {
   return (
     <>
       <div className="field library-platform-field">
@@ -153,7 +191,8 @@ function CollectControls({
             id="collect-account-name"
             name="accountName"
             onChange={(event) => onNameChange(event.target.value)}
-            placeholder={platform === "douyin" ? "例如：老青椒、主页链接或 sec_uid…" : "例如：某某UP主、空间链接或 UID…"}
+            placeholder="输入账号名或链接"
+            ref={accountInputRef}
             value={name}
           />
         </div>

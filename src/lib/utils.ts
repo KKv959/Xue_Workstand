@@ -69,7 +69,23 @@ export function makeDraftTitleFromContent(content: string, fallback = "未命名
     .filter((candidate) => candidate.title && !DRAFT_TITLE_STOP_WORDS.has(candidate.title))
     .sort((a, b) => scoreDraftTitle(b.title, b.index, b.weight) - scoreDraftTitle(a.title, a.index, a.weight))[0]?.title;
 
-  return clampDraftTitle(best || cleanDraftTitleCandidate(fallback) || "未命名草稿", 20);
+  return clampDraftTitle(explicitDraftTitle(content) || inferDraftKeywordTitle(content) || best || cleanDraftTitleCandidate(fallback) || "未命名草稿", 20);
+}
+
+function explicitDraftTitle(content: string) {
+  const inline = content.match(/(?:^|\n)\s*(?:#{1,4}\s*)?(?:标题|题目|名称)\s*[：:]\s*([^\n]+)/);
+  return inline ? cleanDraftTitleCandidate(inline[1]) : "";
+}
+
+function inferDraftKeywordTitle(content: string) {
+  const match = content.match(/[《“"]([^》”"\n]{2,20})[》”"]/);
+  if (!match) return "";
+  const entity = cleanDraftTitleCandidate(match[1]);
+  if (!entity) return "";
+  const start = Math.max(0, (match.index || 0) - 20);
+  const context = content.slice(start, start + match[0].length + 60);
+  const topic = DRAFT_TITLE_TOPIC_WORDS.find((word) => context.includes(word));
+  return topic && !entity.includes(topic) ? `${entity}${topic}` : entity;
 }
 
 type DraftTitleCandidate = {
@@ -158,3 +174,8 @@ const DRAFT_TITLE_STOP_WORDS = new Set([
   "未命名草稿",
   "draft"
 ]);
+
+const DRAFT_TITLE_TOPIC_WORDS = [
+  "联动", "更新", "评测", "测评", "对比", "实测", "体验", "推荐", "攻略", "教程",
+  "上线", "发布", "官宣", "预告", "活动", "福利", "升级", "改版", "涨价", "降价", "复盘"
+];

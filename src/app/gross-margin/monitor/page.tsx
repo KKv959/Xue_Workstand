@@ -743,29 +743,9 @@ function MonitorCard({
                 </Popover>
               </MenuTrigger>
             </span>
-            {showProjectPicker ? (
-              <span className="gross-monitor-project-picker" title={`原视频：${videoTitle}`}>
-                <WorkbenchSelect aria-label="选择维护项目" className="gross-monitor-project-trigger" value="" disabled={busy === `project-${record.id}`} onValueChange={orderId => {
-                  if (orderId === "daily") {
-                    void onUpdateProject(record.id, undefined, record.revision || 0, "日常").then(saved => { if (saved) setEditingProject(false); });
-                  } else if (orderId === "custom") {
-                    setCustomProjectEditing(true);
-                    setCustomProjectName("");
-                  } else {
-                    void onUpdateProject(record.id, orderId, record.revision || 0).then(saved => { if (saved) setEditingProject(false); });
-                  }
-                }}>
-                  <option value="" disabled>{busy === `project-${record.id}` ? "保存中…" : projectTitle || "选择维护项目"}</option>
-                  {projectOrders.map(order => <option key={order.id} value={order.id}>{order.projectName}{order.date ? ` · ${order.date}` : ""}</option>)}
-                  <option value="daily">日常</option>
-                  <option value="custom">自定义</option>
-                </WorkbenchSelect>
-                {customProjectEditing ? <span className="gross-monitor-custom-project-edit"><input aria-label="自定义维护项目名称" autoFocus maxLength={80} placeholder="输入项目名称" value={customProjectName} onChange={event => setCustomProjectName(event.target.value)} onKeyDown={event => {
-                  if (event.key === "Enter" && customProjectName.trim()) void onUpdateProject(record.id, undefined, record.revision || 0, customProjectName.trim()).then(saved => { if (saved) { setEditingProject(false); setCustomProjectEditing(false); } });
-                  if (event.key === "Escape") { setCustomProjectEditing(false); setEditingProject(false); }
-                }} /><button className="btn compact" disabled={!customProjectName.trim() || busy === `project-${record.id}`} onClick={() => void onUpdateProject(record.id, undefined, record.revision || 0, customProjectName.trim()).then(saved => { if (saved) { setEditingProject(false); setCustomProjectEditing(false); } })} type="button">保存</button></span> : null}
-              </span>
-            ) : <strong title={projectTitle ? `${projectTitle}｜${videoTitle}` : videoTitle}>{title}</strong>}
+            <span className="gross-monitor-project-picker" title={`原视频：${videoTitle}`} onDoubleClick={() => setEditingProject(true)}>
+              {editingProject ? <input aria-label="维护项目名称" autoFocus maxLength={80} placeholder="输入项目名称" defaultValue={projectTitle} onBlur={event => { const value = event.target.value.trim(); if (value) void onUpdateProject(record.id, undefined, record.revision || 0, value).then(saved => { if (saved) setEditingProject(false); }); else setEditingProject(false); }} onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") setEditingProject(false); }} /> : <strong title={projectTitle ? `${projectTitle}｜${videoTitle}` : videoTitle}>{title}</strong>}
+            </span>
           </span>
         </div>
       </div>

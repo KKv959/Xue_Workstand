@@ -95,7 +95,7 @@ export function useGrossMarginWorkbench() {
   const rebateRateRef = useRef("");
   const videoAccountLookupRequestRef = useRef(0);
   const projects = useGrossMarginProjects(libraryLoaded);
-  const [projectSelection, setProjectSelection] = useState<{ context: string; id: string } | null>(null);
+  const [projectSelection, setProjectSelection] = useState<{ context: string; id: string; name?: string } | null>(null);
   const projectContext = `${platform}:${accountName}:${videoUrl}`;
   const projectSourceRef = useRef(projects.source);
   const projectSelectionRef = useRef(projectSelection);
@@ -104,6 +104,7 @@ export function useGrossMarginWorkbench() {
   const selectedProject = projectSelection?.context === projectContext
     ? projectOrders.find(order => order.id === projectSelection.id) || null
     : chooseGrossMarginProjectOrder(projectOrders, videoUrl);
+  const projectName = selectedProject?.projectName || (projectSelection?.context === projectContext ? projectSelection.name || "" : "");
 
   // 异步项目表到达或账号/链接切换后，带入选中记录的原始金额。
   useEffect(() => {
@@ -162,11 +163,12 @@ export function useGrossMarginWorkbench() {
       calculation,
       currentPlayCount,
       platform,
+      projectName,
       splitDeliveryEnabled,
       videoTitle,
       videoUrl
     }),
-    [accountName, calculation, currentPlayCount, matchedAccount, platform, splitDeliveryEnabled, videoTitle, videoUrl]
+    [accountName, calculation, currentPlayCount, matchedAccount, platform, projectName, splitDeliveryEnabled, videoTitle, videoUrl]
   );
   const renderedReviewTemplate = useMemo(() => {
     try {
@@ -340,7 +342,7 @@ export function useGrossMarginWorkbench() {
   }
 
   function handleAccountPriceKindChange(kind: AccountPriceKind) {
-    setProjectSelection({ context: projectContext, id: "manual" });
+    setProjectSelection({ context: projectContext, id: "manual", name: projectName });
     setAccountPriceKind(kind);
     if (matchedAccount) applyAccountPrice(matchedAccount, kind);
   }
@@ -354,9 +356,8 @@ export function useGrossMarginWorkbench() {
   }
 
   function handleProjectChange(id: string) {
-    setProjectSelection({ context: projectContext, id });
+    setProjectSelection({ context: projectContext, id, name: id === "manual" ? projectName : "" });
     if (id === "manual") {
-      setOriginalPrice("");
       setRebateRate("");
       rebateRateRef.current = "";
       setDiscountPrice("");
@@ -555,12 +556,11 @@ export function useGrossMarginWorkbench() {
   return {
     projectOrders,
     selectedProject,
+    projectName,
     projectSelectionValue: selectedProject?.id || (projectSelection?.context === projectContext ? projectSelection.id : "choose"),
     projectMonth: projects.source?.month || "",
-    projectSourceError: projects.error,
-    projectSourceLoading: projects.loading,
-    refreshProjects: projects.refresh,
     handleProjectChange,
+    handleManualProjectNameChange: (name: string) => setProjectSelection({ context: projectContext, id: "manual", name: name.trim() }),
     accountName,
     accountPriceKind,
     activePricePanelServiceConfigs,

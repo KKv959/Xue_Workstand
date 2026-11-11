@@ -1591,13 +1591,16 @@
 .modal-panel.writer-library {
   display: flex;
   flex-direction: column;
-  width: min(720px, calc(100vw - 32px));
+  width: min(720px, 100%);
   max-height: calc(var(--app-dvh) * 82);
   padding: 0;
   overflow: hidden;
   border-radius: var(--radius-xl);
   background: var(--panel-raised);
   animation: writer-surface-enter var(--motion-base) var(--ease-apple);
+}
+.writer-history-sidebar {
+  display: none;
 }
 .writer-library-heading,
 .writer-library-heading-copy,
@@ -1661,10 +1664,72 @@
   .writer-library-row-actions { gap: 0; }
   .writer-library-row-actions .writer-tool { opacity: 1; }
   .writer-library-open { padding: var(--space-2) var(--space-1); }
-  .modal-panel.writer-library { width: calc(100vw - 20px); max-height: calc(var(--app-dvh) * 88); }
+  .modal-panel.writer-library { width: 100%; max-height: calc(var(--app-dvh) * 88); }
 }
 @media (prefers-reduced-motion: reduce) {
   .writer-action-menu, .writer-tool, .writer-library-row, .writer-revise-submit,
   .writer-result > .writer-revision-composer { transition: none; }
   .modal-panel.writer-library { animation: none; }
+}
+
+@media (min-width: 1281px) {
+  .writer-content-grid {
+    grid-template-columns: minmax(360px, 33%) minmax(0, 1fr) 272px;
+  }
+
+  .writer-history-modal-trigger {
+    display: none;
+  }
+
+  .writer-history-sidebar {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+    border-left: 1px solid var(--line-subtle);
+    background: var(--panel-raised);
+  }
+
+  .writer-history-sidebar .writer-library-heading {
+    padding: var(--space-3);
+  }
+
+  .writer-history-sidebar .writer-library-search,
+  .writer-history-sidebar .writer-library-caption {
+    margin-inline: var(--space-3);
+  }
+
+  .writer-history-sidebar .writer-library-row-actions {
+    gap: 0;
+  }
+
+  .writer-history-sidebar .writer-library-row-actions > svg:first-child {
+    display: none;
+  }
+}
+
+@media (min-width: 901px) {
+  .writer-source-section {
+    display: flex;
+    min-height: 320px;
+    flex: 1 1 320px;
+    flex-direction: column;
+  }
+
+  .writer-source-content {
+    min-height: 0;
+    flex: 1;
+    grid-template-rows: minmax(0, 1fr) auto auto;
+  }
+
+  .writer-source-field {
+    min-height: 300px;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .writer-source-field .writer-textarea.source {
+    height: 100%;
+    min-height: 280px;
+  }
 }

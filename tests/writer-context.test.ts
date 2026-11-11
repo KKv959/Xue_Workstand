@@ -16,14 +16,13 @@ import { POST as preferenceRoute } from "../src/app/api/write/preference/route";
 import { POST as saveDraftRoute } from "../src/app/api/drafts/route";
 import { shortHash } from "../src/lib/utils";
 import type { Account, Video, Draft } from "../src/lib/types";
-import { streamStyleResponseTextWithFallback } from "../src/lib/ai";
+import { streamStyleResponseText } from "../src/lib/ai";
+import { styleAnalysisInstruction, styleCardInstruction } from "../src/lib/writer-prompts";
 
 const quote = "先看这座景区发生了什么，再说游戏联动的具体规则。";
 const evidence: StyleEvidence = {
-  genre: "活动事件讲述", purposes: ["活动介绍"], unsuitable: ["无依据的争议指控"],
-  structure: "现场现象引入，解释规则，落到参与方式",
-  narrative: { forms: ["吃瓜切入"], beats: [{ purpose: "现场现象带入活动", quote }], bridges: [] },
-  moves: [{ quote, action: "从可感知的现象引出活动", when: "有现场素材", avoid: "没有现场证据时不编造见闻" }], limitations: ["单篇依据"]
+  summary: "从现场现象进入话题，顺着事件解释规则，口吻自然。",
+  quotes: [quote]
 };
 const task: WriterPlan["task"] = {
   purpose: "活动推广", facts: [{ text: "活动可试驾", quote: "活动可试驾" }],
@@ -45,7 +44,25 @@ const styleCard = (sourceId = "event", excerpt = quote) => `# 活动风格卡
 原文证据：[[${sourceId}]]「${excerpt}」
 ## 使用边界与证据范围
 单篇支持，不代表全部作品。`;
+const analysisForTranscript = (transcript: string, description = "先进入事件，再顺着信息展开并收尾。") => {
+  const excerpt = transcript.match(/[^\n。！？!?]+[。！？!?]?/)?.[0]?.trim() || transcript.slice(0, 20);
+  return JSON.stringify({ summary: description, quotes: [excerpt] });
+};
 const plan = (id = "event"): WriterPlan => ({ task, selected: [{ id, reason: "活动用途相符，借鉴现场切入" }], applicableStyle: ["先讲具体活动，再解释规则"], notes: [] });
+
+test("风格学习保留老版深度分析，不恢复旧结构化格式", () => {
+  const samplePrompt = styleAnalysisInstruction();
+  const cardPrompt = styleCardInstruction();
+  assert.match(samplePrompt, /具体、深入/);
+  assert.match(samplePrompt, /从素材里发现角度/);
+  assert.match(samplePrompt, /观众已有的认识和情绪/);
+  assert.doesNotMatch(samplePrompt, /用一段自然的话概括|purposes|narrative|moves|limitations/);
+  assert.match(cardPrompt, /作者的创作方法/);
+  assert.match(cardPrompt, /观众的理解怎么变化/);
+  assert.match(cardPrompt, /3000—4500/);
+  assert.match(cardPrompt, /只能逐字复制每篇“可引用原句”/);
+  assert.doesNotMatch(cardPrompt, /简单标明场景/);
+});
 
 test("风格分析引句和风格卡引用必须来自各自原文", () => {
   assert.deepEqual(parseStyleEvidence(JSON.stringify(evidence), quote, "样本"), evidence);
@@ -69,32 +86,29 @@ test("风格卡允许同一证据的连续摘录，但拒绝改字、拼接或�
   assert.throws(() => validateStyleCardCitations(`[[other]]「${excerpt}」`, quotes), /引用/);
 });
 
+test("风格卡引用允许 Markdown 换行空格但仍拒绝改字", () => {
+  const quotes = [{ sourceId: "event", quote: "第一行原文\n第二行原文" }];
+  validateStyleCardCitations("[[event]]「第一行原文  \n第二行原文」", quotes);
+  assert.throws(() => validateStyleCardCitations("[[event]]「第一行改写  \n第二行原文」", quotes), /引用/);
+});
+
 const eventBefore = "当然啊，这个也有怀疑是不是有人故意搞恶作剧，呃，但真相其实很快就被揭开了，永劫无间干的。";
 const eventAfter = "而他们之所以这么做呢，原因也很简单，就是给自己的新版本做宣传。";
 const eventRule = "就是在地图上线首周内，只要协助游戏内的人物刘邦成功撤离，就有机会触发特殊撤离动画。";
 const mixedEventText = `${eventBefore}\n${eventAfter}\n${eventRule}`;
 // Manually annotated excerpts from 7669313121198376436; these validate data flow, not model judgement.
-const mixedEventEvidence: StyleEvidence = {
-  ...evidence, genre: "吃瓜事件讲述", purposes: ["讲述玩家趣事", "介绍版本活动"],
-  narrative: {
-    forms: ["吃瓜", "揭晓悬念"],
-    beats: [{ purpose: "揭晓现象来源", quote: eventBefore }, { purpose: "说明活动目的", quote: eventAfter }, { purpose: "解释参与规则", quote: eventRule }],
-    bridges: [{ before: eventBefore, after: eventAfter, action: "揭晓趣事与游戏的关联，再解释活动", requires: "真实的活动现象和对应关系" }]
-  },
-  moves: [{ ...evidence.moves[0], quote: eventRule }]
-};
+const mixedEventEvidence: StyleEvidence = { summary: "先揭晓趣事来源，再自然转入活动规则。", quotes: [eventBefore, eventAfter, eventRule] };
 
-test("目的与讲法可并存，段落和衔接引句必须按原文顺序定位", () => {
+test("逐篇分析只要求讲法概括，少量引句可选但必须来自原文", () => {
   const parsed = parseStyleEvidence(JSON.stringify(mixedEventEvidence), mixedEventText, "吃瓜推广");
-  assert.deepEqual(parsed.purposes, ["讲述玩家趣事", "介绍版本活动"]);
-  const narrative = mixedEventEvidence.narrative!;
-  assert.throws(() => parseStyleEvidence(JSON.stringify({ ...mixedEventEvidence, narrative: { ...narrative, beats: [...narrative.beats].reverse() } }), mixedEventText, "倒序"), /段落顺序/);
-  assert.throws(() => parseStyleEvidence(JSON.stringify({ ...mixedEventEvidence, narrative: { ...narrative, bridges: [{ ...narrative.bridges[0], before: eventAfter, after: eventBefore }] } }), mixedEventText, "倒接"), /前后顺序/);
-  assert.throws(() => parseStyleEvidence(JSON.stringify({ ...mixedEventEvidence, narrative: { ...narrative, bridges: [{ ...narrative.bridges[0], after: "网友纷纷报名" }] } }), mixedEventText, "虚构"), /原文定位/);
-  const legacy = { ...evidence, narrative: undefined };
+  assert.equal(parsed.summary, mixedEventEvidence.summary);
+  assert.deepEqual(parseStyleEvidence(JSON.stringify({ summary: "直接概括讲法" }), mixedEventText, "无引句").quotes, []);
+  assert.throws(() => parseStyleEvidence(JSON.stringify({ ...mixedEventEvidence, quotes: ["网友纷纷报名"] }), mixedEventText, "虚构"), /原文定位/);
+  const legacy = { genre: "活动事件讲述", purposes: ["活动介绍"], unsuitable: [], structure: "现场引入",
+    moves: [{ quote, action: "引出活动", when: "有现场素材", avoid: "" }], limitations: [] };
   assert.doesNotThrow(() => parseStoredRecord("旧缓存", { schemaVersion: 1, version: 1, cacheKey: "old", kind: "account-video", sourceId: "old",
     title: "旧分析", inputChars: quote.length, analysis: JSON.stringify(legacy), evidence: legacy, usedModel: "fixture", reasoningEffort: "high", generatedAt: new Date().toISOString() }, "style-analysis"));
-  assert.throws(() => parseStyleEvidence(JSON.stringify(legacy), quote, "旧分析"), /讲述方式与段落衔接/);
+  assert.throws(() => parseStyleEvidence(JSON.stringify(legacy), quote, "旧分析"), /讲法概括/);
 });
 
 test("旧模板占位风格卡被识别为未生成，且不能出稿", async () => {
@@ -130,7 +144,7 @@ test("旧模板占位风格卡被识别为未生成，且不能出稿", async ()
   });
 });
 
-test("原作直接归纳成卡，写稿只拿卡片与本次素材", async () => {
+test("逐篇分析后汇总成卡，写稿只拿卡片与本次素材", async () => {
   await fixture(async ({ account, requests, setReply }) => {
     await saveVideos(account, [video(account, "mixed", "景区奇怪现象", 10)]);
     await saveTranscript({ platform: account.platform, accountId: account.id, videoId: "mixed", text: mixedEventText, source: "manual" });
@@ -144,22 +158,25 @@ test("原作直接归纳成卡，写稿只拿卡片与本次素材", async () =>
     const style = styleCard("mixed", eventBefore).replace("## 使用边界", `[[mixed]]「${eventAfter}」\n## 使用边界`);
     await completePreparedAccountStyle(context, { text: style, model: "fixture", ok: true, fallback: false });
     assert.equal((await readStyle(account.platform, account.id)).trim(), style);
-    const commentary = { ...evidence, purposes: ["评论事件"], narrative: { forms: ["吃瓜"], beats: [{ purpose: "解释事件", quote }], bridges: [] } };
-    assert.equal(parseStyleEvidence(JSON.stringify(commentary), quote, "纯评论").narrative?.bridges.length, 0);
+    assert.deepEqual(parseStyleEvidence(JSON.stringify({ summary: "直接评论事件" }), quote, "纯评论").quotes, []);
   });
 });
 
 test("风格学习完整读取全部转写，保留长原文与长卡，低热度原文变化也使缓存失效", async () => {
-  await fixture(async ({ account, requests }) => {
+  await fixture(async ({ account, requests, setReply }) => {
     const originals = Array.from({ length: 12 }, (_, index) => ({
       id: `original-${index}`,
       text: `第${index}篇的观察角度。` + (index === 11 ? "铺垫中的关键细节。".repeat(800) : "接住上一句的话头。") + `第${index}篇的完整结尾。`
     }));
     await saveVideos(account, originals.map((item, index) => video(account, item.id, `作品${index}`, 1000 - index)));
     for (const item of originals) await saveTranscript({ platform: account.platform, accountId: account.id, videoId: item.id, text: item.text, source: "manual" });
+    setReply(messages => {
+      const source = originals.find(item => messages[1].includes(item.text));
+      return analysisForTranscript(source?.text || "缺少原文");
+    });
     const context = await prepareAccountStyleContext(account.platform, account.id);
     assert.equal(context.sampleVideoIds.length, originals.length, "不能只读前 8 篇再抽 3 篇");
-    for (const item of originals) assert.ok(context.messages[1].content.includes(item.text), `${item.id} 应完整输入，不截取头中尾`);
+    for (const item of originals) assert.ok(requests.some(messages => messages[1].includes(item.text)), `${item.id} 应完整输入，不截取头中尾`);
     const detailedStyle = "# 具体写法\n" + "从具体细节建立观众预期，再通过后续行动改变理解。\n".repeat(300);
     await completePreparedAccountStyle(context, { text: detailedStyle, model: "fixture", ok: true, fallback: false });
     assert.equal((await readStyle(account.platform, account.id)).trim(), detailedStyle.trim(), "详细风格卡不截短");
@@ -168,7 +185,7 @@ test("风格学习完整读取全部转写，保留长原文与长卡，低热�
     assert.ok((await prepareAccountStyleContext(account.platform, account.id)).cachedStyle);
     await saveTranscript({ platform: account.platform, accountId: account.id, videoId: originals[11].id, text: originals[11].text + "新的收尾。", source: "manual" });
     assert.equal((await prepareAccountStyleContext(account.platform, account.id)).cachedStyle, undefined);
-    assert.equal(requests.length, 0, "学习准备不增加模型调用");
+    assert.equal(requests.length, originals.length + 1, "只有变化的原稿重新分析");
   });
 });
 
@@ -185,9 +202,7 @@ test("风格快照保存与续改保持原风格，写稿不额外读取原作",
     setReply(messages => {
       if (messages[0].includes("完整阅读这一篇")) {
         const source = samples.find(s => messages[1].includes(s.transcript))!;
-        return JSON.stringify({ ...evidence, genre: source.id === "hot" ? "争议周报" : evidence.genre,
-          narrative: { forms: ["事件讲述"], beats: [{ purpose: "解释事件", quote: source.transcript }], bridges: [] },
-          moves: [{ ...evidence.moves[0], quote: source.transcript }] });
+        return JSON.stringify({ summary: source.id === "hot" ? "先讲争议，再给判断。" : evidence.summary, quotes: [source.transcript] });
       }
       return JSON.stringify(plan(`douyin:${account.id}:event`));
     });
@@ -252,7 +267,7 @@ test("学习失败不覆盖旧卡；旧稿无快照时明确记录兼容行为",
   await fixture(async ({ account, setReply, requests }) => {
     await saveVideos(account, [video(account, "event", "活动", 1)]);
     await saveTranscript({ platform: account.platform, accountId: account.id, videoId: "event", text: quote, source: "manual" });
-    setReply(() => JSON.stringify(evidence));
+    setReply(() => analysisForTranscript(quote));
     const context = await prepareAccountStyleContext(account.platform, account.id);
     await assert.rejects(() => completePreparedAccountStyle(context, { text: "错误模板", model: "bad", ok: false, fallback: true }), /原卡已保留/);
     await assert.rejects(() => completePreparedAccountStyle(context, {
@@ -297,23 +312,24 @@ test("多风格准备失败单独返回，不阻断其他风格；取消后不�
   });
 });
 
-test("归纳成功后缓存可复用，强制归纳只重做卡片，模型改变会使学习缓存失效", async () => {
+test("归纳成功后缓存可复用，手动重新总结会重做逐篇分析", async () => {
   await fixture(async ({ account, setReply, requests }) => {
     await saveVideos(account, [video(account, "event", "活动", 1)]);
     await saveTranscript({ platform: account.platform, accountId: account.id, videoId: "event", text: quote, source: "manual" });
-    setReply(() => JSON.stringify(evidence));
+    setReply(() => analysisForTranscript(quote));
     const context = await prepareAccountStyleContext(account.platform, account.id);
     await completePreparedAccountStyle(context, { text: styleCard(), model: "fixture", ok: true, fallback: false });
     const cached = await prepareAccountStyleContext(account.platform, account.id);
     assert.ok(cached.cachedStyle);
     const forced = await prepareAccountStyleContext(account.platform, account.id, { force: true });
     assert.equal(forced.cachedStyle, undefined);
-    assert.equal(forced.analysisStats.analysisGeneratedCount, 0);
-    assert.equal(requests.length, 0);
+    assert.equal(forced.analysisStats.analysisGeneratedCount, 1);
+    assert.equal(forced.analysisStats.analysisCachedCount, 0);
+    assert.equal(requests.length, 2);
     process.env.CHAT_MODEL = "fixture-next";
     const changed = await prepareAccountStyleContext(account.platform, account.id);
     assert.equal(changed.cachedStyle, undefined);
-    assert.equal(requests.length, 0);
+    assert.equal(requests.length, 3);
   });
 });
 
@@ -339,10 +355,11 @@ test("精简首稿仍按每张有效风格卡独立准备，不混卡、不附�
   });
 });
 
-test("备用模型成功归纳仍可缓存，并保留真实备用原因", async () => {
-  await fixture(async ({ account }) => {
+test("历史兼容归纳结果仍可缓存，并保留原始兼容原因", async () => {
+  await fixture(async ({ account, setReply }) => {
     await saveVideos(account, [video(account, "event", "活动", 1)]);
     await saveTranscript({ platform: account.platform, accountId: account.id, videoId: "event", text: quote, source: "manual" });
+    setReply(() => analysisForTranscript(quote));
     const context = await prepareAccountStyleContext(account.platform, account.id);
     await completePreparedAccountStyle(context, { text: styleCard(), model: "backup", ok: true, fallback: true, fallbackReason: "主节点暂时不可用" });
     const cached = await prepareAccountStyleContext(account.platform, account.id);
@@ -395,26 +412,26 @@ test("归纳直接输入原文，不继承旧卡规则，缓存失效不增加�
     const cardChanged = await prepareAccountStyleContext(account.platform, account.id);
     assert.equal(cardChanged.cachedStyle, undefined);
     assert.equal(cardChanged.analysisStats.analysisGeneratedCount, 0);
-    assert.equal(requests.length, 0, "卡片准备不调用模型分析");
-    assert.equal(await readAccountStyleSampleAnalysis(account.platform, account.id, "event"), null);
+    assert.equal(requests.length, 1, "缓存失效时复用已有逐篇分析");
+    assert.ok(await readAccountStyleSampleAnalysis(account.platform, account.id, "event"));
 
     assert.match(await readStyle(account.platform, account.id), /不要重复解释结尾/);
   });
 });
 
-test("一次模型调用完成风格归纳；相同原文复用卡片，失败与无效引用保留原卡", async () => {
+test("逐篇分析加汇总完成风格归纳；相同原文复用卡片，失败与无效引用保留原卡", async () => {
   await fixture(async ({ account, requests, setReply }) => {
     await saveVideos(account, [video(account, "event", "活动", 1)]);
     await saveTranscript({ platform: account.platform, accountId: account.id, videoId: "event", text: quote, source: "manual" });
-    setReply(() => styleCard());
+    setReply((messages) => messages[0].includes("完整阅读这一篇") ? analysisForTranscript(quote) : styleCard());
     const result = await generateStyleProfile(account.platform, account.id);
-    assert.equal(requests.length, 1);
-    assert.equal(result.analysisGeneratedCount, 0);
-    assert.ok(requests[0][1].includes(quote));
+    assert.equal(requests.length, 2);
+    assert.equal(result.analysisGeneratedCount, 1);
+    assert.ok(requests.some(message => message[1].includes(quote)));
     assert.equal((await generateStyleProfile(account.platform, account.id)).cached, true);
-    assert.equal(requests.length, 1);
+    assert.equal(requests.length, 2);
     const previous = await readStyle(account.platform, account.id);
-    setReply(() => "[[event]]「伪造的引句」");
+    setReply((messages) => messages[0].includes("完整阅读这一篇") ? analysisForTranscript(quote) : "[[event]]「伪造的引句」");
     await assert.rejects(() => generateStyleProfile(account.platform, account.id, { force: true }), /引用/);
     assert.equal(await readStyle(account.platform, account.id), previous);
     setReply(() => ({ status: 401, body: "unauthorized" }));
@@ -616,31 +633,30 @@ test("严格模型请求保留有界重试、完整结束校验及取消，不�
   });
 });
 
-test("风格卡流式调用及无输出补偿不再注入固定输出预算", async () => {
+test("风格卡只在当前中转站模型重试，不切备用节点或本地模板", async () => {
   await fixture(async ({ requests, requestBodies, setReply }) => {
     setReply(() => requests.length === 1 ? { status: 503, body: "service unavailable" } : styleCard());
-    const result = await streamStyleResponseTextWithFallback({ messages: [{ role: "user", content: "归纳风格" }], onDelta() {} });
+    const result = await streamStyleResponseText({ messages: [{ role: "user", content: "归纳风格" }], onDelta() {} });
     assert.equal(result.ok, true);
     assert.equal(result.text, styleCard());
     assert.equal(requests.length, 2);
     assert.equal(requestBodies[0].stream, true);
-    assert.equal(requestBodies[1].stream, false);
+    assert.equal(requestBodies[1].stream, true);
     for (const payload of requestBodies) assert.equal(payload.max_tokens, undefined);
+    setReply(() => ({ status: 403, body: "forbidden" }));
+    await assert.rejects(
+      () => streamStyleResponseText({ messages: [{ role: "user", content: "归纳风格" }], onDelta() {} }),
+      error => error instanceof Error && /中转站/.test(error.message) && !/本地模板|CHAT_FALLBACK/.test(error.message)
+    );
   });
 });
 
 
-test("逐篇分析允许超过旧条数和字符上限，仍核验原文", () => {
+test("逐篇分析概括和引句不沿用旧条数与字符上限，仍核验原文", () => {
   const longQuote = "连续原文".repeat(180);
   const transcript = Array.from({ length: 10 }, (_, i) => `段落${i}：${longQuote}`).join("\n");
-  const beats = Array.from({ length: 10 }, (_, i) => ({ purpose: "承接上一段".repeat(60), quote: `段落${i}：${longQuote}` }));
-  const expanded = { genre: "文体".repeat(100), purposes: Array(9).fill("表达目的".repeat(40)),
-    unsuitable: Array(9).fill("场景限制".repeat(50)), structure: "全文结构".repeat(250),
-    narrative: { forms: Array(8).fill("讲述方式".repeat(40)), beats,
-      bridges: beats.slice(0, 5).map((beat, i) => ({ before: beat.quote, after: beats[i + 1].quote, action: "自然承接".repeat(150), requires: "相关信息".repeat(150) })) },
-    moves: Array.from({ length: 12 }, () => ({ quote: longQuote, action: "表达动作".repeat(150), when: "适用场景".repeat(100), avoid: "避免误用".repeat(100) })),
-    limitations: Array(9).fill("材料缺口".repeat(60)) };
-  assert.equal(parseStyleEvidence(JSON.stringify(expanded), transcript, "长文").moves.length, 12);
+  const expanded = { summary: "全文讲法".repeat(250), quotes: Array.from({ length: 10 }, (_, i) => `段落${i}：${longQuote}`) };
+  assert.equal(parseStyleEvidence(JSON.stringify(expanded), transcript, "长文").quotes.length, 10);
   assert.throws(() => parseStyleEvidence(JSON.stringify(expanded), "无相关原文", "长文"), /原文定位/);
 });
 
@@ -655,13 +671,13 @@ test("续改完整传入超过七万字符的当前稿件", async () => {
   });
 });
 
-test("模型报告输出长度截断时，流式和普通响应都不能作为成功风格卡", async () => {
-  for (const streaming of [false, true]) await fixture(async ({ setReply }) => {
-    setReply(() => ({ status: 200, contentType: streaming ? "text/event-stream" : "application/json", body: streaming
-      ? 'data: {"choices":[{"delta":{"content":"未完成正文"},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\ndata: [DONE]\n\n'
-      : JSON.stringify({ choices: [{ message: { content: "未完成正文" }, finish_reason: "length" }] }) }));
-    const result = await streamStyleResponseTextWithFallback({ messages: [{ role: "user", content: "生成" }], onDelta() {} });
-    assert.equal(result.ok, false);
-    assert.equal(result.fallback, true);
+test("模型报告输出长度截断时不能作为成功风格卡", async () => {
+  await fixture(async ({ setReply }) => {
+    setReply(() => ({ status: 200, contentType: "text/event-stream", body:
+      'data: {"choices":[{"delta":{"content":"未完成正文"},"finish_reason":null}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\ndata: [DONE]\n\n' }));
+    await assert.rejects(
+      () => streamStyleResponseText({ messages: [{ role: "user", content: "生成" }], onDelta() {} }),
+      /长度上限|截断|未完成/
+    );
   });
 });

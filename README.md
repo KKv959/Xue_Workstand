@@ -39,7 +39,8 @@ npm run dev:stop
 - 应用内外部能力复用 `src/lib/opencli-runtime.ts`（参数数组、超时与取消）、`src/lib/model-runtime.ts`（模型与备用节点）、`src/lib/support-documents.ts`（正文读取）。联网搜索仅使用支持 Responses `web_search` 的节点；正文读取失败显式报错。
 - API 优先复用 `apiJson()`、`apiError()`、`parseJsonBody()` 和 Zod；NDJSON 复用 `createNdjsonStream()` / `readNdjsonStream()`，保持 `stage/delta/result/error/done` 及取消语义。需要持久化、进度、取消和恢复的业务任务使用[任务中心](./docs/api/jobs.md)。
 - 前端可见接口变更同步类型、`src/lib/client.ts`、缓存及页面状态；`APP_MODE` / `APP_START_PATH` 变更检查 middleware、模式守卫、导航和任务限制。敏感写接口沿用 `isLocalServiceRequest()` 或 `isLocalSameOriginRequest()` 的适用校验，破坏性操作不使用 GET。
-- 检查按改动选择：逻辑用目标测试和相关 lint，类型/接口用 `npm run typecheck`，路由或打包用隔离构建；跨模块影响扩大时再补全量测试。纯文档审 diff 并执行 `git diff --check`。界面验收见 `DESIGN.md`，存储检查见存储模块说明；已覆盖的有效检查不重复执行。
+- 修改完成时只跑受影响的测试和改动文件的 lint；依赖升级、共享底层或确有跨模块影响时再跑 `npm test`，需要全仓规范检查时用 `npm run lint`。纯文档审 diff 并执行 `git diff --check`。界面只验收受影响交互，具体要求见 `DESIGN.md`。
+- 类型/接口改动且本次不构建时用 `npm run typecheck`；需要生产构建时直接用 `npm run remote:build`，构建已包含类型检查，不再单独重复。已经要发布时直接执行 `npm run remote:deploy`，无需先 build。通过后源码和相关配置未变，不再重复相同检查；测试和 lint 的结果由当前开发任务确认，发布脚本不自动判断影响范围或补跑全量测试。
 
 ## 运行指标与模型评测
 
@@ -72,7 +73,8 @@ npm run remote:start      # 启动/重启当前正式版本
 npm run remote:stop       # 停止正式服务
 npm run remote:status     # 查看正式服务和本地健康状态
 npm run remote:dev        # 将 3000 服务切为开发模式，影响公网入口
-npm run remote:deploy     # 检查、构建、发布并健康检查
+npm run remote:build      # 隔离构建并检查类型，保存候选，不切换服务
+npm run remote:deploy     # 复用或构建候选，发布并健康检查
 npm run remote:rollback   # 回退上一可用版本
 ```
 
@@ -84,9 +86,11 @@ npm run remote:rollback   # 回退上一可用版本
 
 日常开发使用前述 `dev:sandbox`。`remote:dev` 会停止正式服务，在同一 3000 端口运行开发版，公网也随之切换。桌面侧栏底部的“服务模式”按钮可切换开发服务或上次发布的正式服务；仅在 Mac 本机 `localhost:3000` 页面可操作，有运行或排队任务时拒绝切换。按钮切到正式服务不会重新构建或发布代码，正式版须先通过 `remote:deploy` 更新。隔离测试服务不能控制本机服务。
 
-`remote:deploy` 仍是唯一日常发布入口，复制当前工作区的 `src`、`public`、`scripts`、`tests` 和构建配置到临时目录。新候选依次执行 `npm ci`、全量测试、完整 lint、`next build --no-lint`；构建保留 TypeScript 和生成路由类型检查，因此不再另跑一遍 typecheck 或构建内 lint。每阶段打印耗时，首次候选的完整检查不会被跳过。
+`remote:deploy` 是日常发布入口，复用 `remote:build` 生成的候选；没有匹配候选时自行构建。两者使用同一构建流程：复制当前工作区的 `src`、`public`、`scripts`、`tests` 和构建配置到临时目录，准备依赖后执行 `next build --no-lint`。构建保留 TypeScript 和生成路由类型检查；测试和 lint 已在开发阶段按影响范围完成，发布时不重跑。每阶段打印耗时。`remote:build` 不检查或暂停运行任务，不切换正式服务。
 
-已验证候选记录在 `.remote-server/candidate.json`。再次执行同一命令时，源码（包含未提交修改）、lockfile、测试、环境文件、进程环境及 Node/npm/有效 npm 配置/平台指纹必须一致，产物内容也必须通过校验，才会复用。任务阻断或真实资料库只读检查失败时保留候选；修复这些运行条件后重试，无需重复安装、测试和构建。源码或配置变化、产物缺失/损坏、候选发布失败则重新构建。资料库和任务检查每次重做；已运行同一候选且健康时不重启。
+构建依赖独立缓存在 `.remote-server/build-dependencies`，不使用开发服务的 `node_modules`。`package.json`、lockfile、`.npmrc`、有效进程环境、Node/npm 配置与平台一致时直接复用；业务源码变化只重新构建。首次、安装输入变化或缓存缺失时才执行 `npm ci`。安装失败不更新缓存，编译失败仍保留已完整安装的依赖；发布产物包含自己的运行依赖，不依赖这个缓存。需要重装时可删除此缓存目录后重新构建。
+
+候选记录在 `.remote-server/candidate.json`，`validation: build-passed` 仅表示构建与类型检查通过，不冒充全量测试通过。源码（包含未提交修改）、lockfile、测试、环境文件、有效进程环境及 Node/npm/有效 npm 配置/平台指纹必须一致，产物内容也必须通过校验，才会复用。调用目录、shell 层级、npm 命令入口和 `CODEX_*` 执行元数据不参与指纹，因此 build 后 deploy、换一次工具调用不会误触发重新构建。任务阻断或真实资料库只读检查失败时保留候选；恢复后重试无需重复安装和构建。源码或配置变化、产物缺失/损坏、候选发布失败则重新构建。资料库和任务检查每次发布仍会执行；已运行同一候选且健康时不重启。
 
 配置指纹不等于配置备份：`.env*` 不复制进构建目录或产物，仍由正式进程启动时读取；构建沿用调用进程环境。项目 `.npmrc` 只用于临时目录中的依赖安装，随后删除。发布范围仍是工作区预设目录的整体内容，不支持只选本次 diff；元数据保存输入指纹，提交号不能代表全部源码。
 
@@ -122,6 +126,7 @@ npm run remote:rollback   # 回退上一可用版本
 - `STYLE_LIBRARY_DIR`：本地风格库目录，默认 `./style-library`。
 - `WECOM_ACCOUNT_SHEET_URL`：可选。配置企业微信在线表格链接后，数据维护里的抖音 / B站账号配对和报价以在线表为准，通过 `wecom-cli` 读取。普通打开会立即展示最后一次成功缓存并在后台刷新，不再等待远端；手动点击刷新才会等待最新结果。在线表暂时不可用时继续显示上次成功缓存或本地缓存，并给出可见警告。
 - `WECOM_PROJECT_SHEET_URL`：可选，覆盖数据维护使用的“自孵化 - 短视频一口价锁档及执行情况”项目表。按上海时区当月工作表、平台和账号匹配项目；链接唯一匹配或只有一个项目时自动选择，多项目可切换。折前价格取下单金额，返点比例为返点金额除以下单金额，折后价格直接取最终合作价格。页面只读取按来源和年月保存的成功缓存；进入页面、缓存过期或新月份无缓存时均不自动同步，点击项目右侧刷新按钮才同步。同步使用任务中心，支持停止和重试；缺失或无效金额显式提示，远端失败保留成功缓存。
+- 维护区项目选择“手动填写”后可在原框内编辑名称，回车或失焦保存到本次维护；保留原档位价格，返点和折后价格可重新填写。文案模板的“项目”字段（`{{projectName}}`）自动使用所选或手填名称，已有空白“项目：”行自动识别为该字段。
 - `WECOM_CLI_BIN`、`WECOM_ACCOUNT_SHEET_CACHE_TTL_MS`、`WECOM_ACCOUNT_SHEET_FALLBACK_LOCAL`：在线账号表读取命令、缓存时长和本地回退开关。后台同步失败后普通读取冷却 5 分钟，手动刷新可立即重试；非法报价或缓存落盘失败不会覆盖最后成功数据。回退关闭时读取显式报错。
 - `JOB_MAX_ACTIVE`：后台任务最大同时运行数，默认 `5`，允许 `1-6`；多任务会先排队再执行。
 - `JOB_HISTORY_LIMIT`：任务历史保留条数，默认 `200`，允许 `50-1000`，超出后自动清理更早的已结束任务。
@@ -142,7 +147,7 @@ npm run remote:rollback   # 回退上一可用版本
 - 本机模型请求按代理地址复用连接池，空闲连接默认保留 30 秒（服务端 keep-alive 提示优先），最多保留 8 个代理池；淘汰时等待在途请求结束。直连继续使用 Undici 默认连接池，云端继续使用原生 fetch。此优化减少重复建连，不改变模型、推理强度或重试策略。
 - `CHAT_HEALTH_PROBE_TIMEOUT_MS`：对话模型健康检查探针超时，默认 `8000` 毫秒，允许 `2000-30000`。
 - `WEB_RESEARCH_ENABLED`、`WEB_RESEARCH_API_KEY`、`WEB_RESEARCH_BASE_URL`、`WEB_RESEARCH_RESPONSES_URL`、`WEB_RESEARCH_MODEL`、`WEB_RESEARCH_REASONING_EFFORT`、`WEB_RESEARCH_SERVICE_TIER`、`WEB_RESEARCH_PROXY_URL`：写作台联网检索的独立 Responses API 配置，推理档位默认 `low`（实际搜索仍服从高级设置覆盖）。它只负责 `web_search`，不会改变现有 Chat Completions 写作链；未配置独立接口时，系统仍可使用对话模型链里明确支持 Responses 的节点。密钥不会自动跨服务复用，如确实是同一服务，可在本地环境文件写 `WEB_RESEARCH_API_KEY=$CHAT_API_KEY`。
-- 风格学习直接从几篇原文一次生成风格卡，不再逐篇调用模型。旧的 `STYLE_SAMPLE_ANALYSIS_CONCURRENCY`、`STYLE_ONE_SHOT_MAX_INPUT_CHARS` 不再生效。
+- 风格学习先逐篇深入理解讲法，再汇总风格卡；逐篇并发数由现有 `STYLE_SAMPLE_ANALYSIS_CONCURRENCY` 控制。每篇使用自然分析和可选的少量原句，不使用旧版用途、段落节拍、衔接、场景与限制结构。
 - `ENGAGEMENT_MODEL_CONCURRENCY`：仅用于弹幕生成的历史并发配置，评论按目标数量整组生成并直接保存，不再按该值并发拆批。
 - `IMAGE_API_KEY`、`IMAGE_BASE_URL`、`IMAGE_MODEL`、`IMAGE_SIZE`、`IMAGE_QUALITY`、`IMAGE_FORMAT`、`IMAGE_PROXY_URL`：可选。用于生图工作台。接口兼容 OpenAI Images API；`IMAGE_BASE_URL` 应包含 `/v1`，`IMAGE_MODEL` 填服务商提供的准确模型标识。工作台按页面选择的模型配置、尺寸和质量生成。
 - `LARK_CLI_BIN`：默认 `lark-cli`，直接调用飞书 CLI（OpenCLI 2 不再转发外部 CLI）。
@@ -150,7 +155,8 @@ npm run remote:rollback   # 回退上一可用版本
 
 风格学习、写作、评论和弹幕生成依赖可用的对话模型；调用失败不会用本地模板代替。风格卡归纳沿用现有流式模型、取消和错误处理，正常完成且引用校验通过后才保存。失败保留原卡，更新前将旧版归档到 `.style-history/`，并校验生成期间是否有人编辑。业务请求不设置统一输出 token 上限，仍受模型容量、超时和用户要求约束。
 
-账号风格的链路是：**几篇原稿 → 一次提炼风格 → 新素材直接成稿**。本地从最多 8 篇可用转写中去重、间隔选取最多 3 篇供归纳，不做主题评分或逐篇分析。过长原文保留头、中、尾连续片段，省略处明确标注；每篇学习原文最多 6000 字符。提示词只提炼口吻、观察角度、节奏和句间衔接，不写固定套路或禁用清单。卡片原句引用仍逐字核验。旧分析缓存保留，但新链路不读写它；“账号样本分析”模型项作为历史配置保留，归纳统一用“账号风格卡”。
+账号风格的链路是：**原稿逐篇深入分析 → 汇总风格卡 → 新素材直接成稿**。逐篇分析读取完整转写，具体理解观察角度、观众关系、信息推进、句式原声、节奏、铺垫、转折、类比和收尾，可附 0—3 句原文；不要求用途、场景边界、段落节拍、限制清单或逐段举证。汇总沿用老版深度风格卡的分析思路，对照多篇提炼稳定讲法和有意义的变化，卡片中的原句引用仍逐字核验。“账号逐篇样本分析”和“账号风格卡”可分别选择模型与推理强度。
+资料库中的“重新总结”会强制重做全部逐篇分析和最终汇总；普通自动更新只复用原稿、分析提示词版本和模型配置均未变化的逐篇缓存。任务进度会明确显示逐篇分析是重新生成还是复用。
 
 已有卡片不会自动重建。用户主动重新归纳时，不把旧卡规则输入模型；明确保存的偏好独立保留。原文、选样版本、提示词或模型配置改变使卡片缓存失效；无变化时复用成功卡片，备用模型信息仍保留。详细实现与对照记录见 [账号风格链路](./docs/style-writing.md)。
 
